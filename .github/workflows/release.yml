@@ -164,16 +164,14 @@ jobs:
           ARM64_MAC_SHA=$(sha256sum dist/*-aarch64-apple-darwin.tar.gz | awk '{print $1}')
           INTEL_MAC_SHA=$(sha256sum dist/*-x86_64-apple-darwin.tar.gz | awk '{print $1}')
           LINUX_SHA=$(sha256sum dist/*-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
-          CLEAN_VER="${VERSION#v}"
 
           cat <<EOF > Formula/harnesscope.rb
           class Harnesscope < Formula
             desc "Local cross-platform telemetry utility for AI coding agents"
             homepage "https://github.com/mr-lexus/harnesscope"
-            version "${CLEAN_VER}"
             license "MIT"
 
-            on_macos do
+            if OS.mac?
               if Hardware::CPU.arm?
                 url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-aarch64-apple-darwin.tar.gz"
                 sha256 "${ARM64_MAC_SHA}"
@@ -181,9 +179,7 @@ jobs:
                 url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-x86_64-apple-darwin.tar.gz"
                 sha256 "${INTEL_MAC_SHA}"
               end
-            end
-
-            on_linux do
+            else
               url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
               sha256 "${LINUX_SHA}"
             end
