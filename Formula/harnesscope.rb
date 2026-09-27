@@ -5,15 +5,15 @@ class Harnesscope < Formula
 
   if OS.mac?
     if Hardware::CPU.arm?
-      url "https://github.com/mr-lexus/harnesscope/releases/download/v0.2.1/harnesscope-v0.2.1-aarch64-apple-darwin.tar.gz"
-      sha256 "ad0d5656f5f17881610dd6627f5f225b2f5b39b0cd16020ebc40983efe69dc72"
+      url "https://github.com/mr-lexus/harnesscope/releases/download/v0.2.2/harnesscope-v0.2.2-aarch64-apple-darwin.tar.gz"
+      sha256 "0c9e43d741f7707174ab53d0ffaf02c8fd1fc46404e342b33e2de188a1cc8628"
     else
-      url "https://github.com/mr-lexus/harnesscope/releases/download/v0.2.1/harnesscope-v0.2.1-x86_64-apple-darwin.tar.gz"
-      sha256 "c9f75c16797db6f95a47ed2593bef76ec207afdb11798d6471cb5e9fe51ac4d5"
+      url "https://github.com/mr-lexus/harnesscope/releases/download/v0.2.2/harnesscope-v0.2.2-x86_64-apple-darwin.tar.gz"
+      sha256 "ca097bedfdad15dc166b6f07257d957fdae0203a6225675d558e77f2374d4a10"
     end
   else
-    url "https://github.com/mr-lexus/harnesscope/releases/download/v0.2.1/harnesscope-v0.2.1-x86_64-unknown-linux-gnu.tar.gz"
-    sha256 "9f8d753953e73cbcc15e8bec515c4a3808fae61ee1d29c0924d7e57eb3424ca3"
+    url "https://github.com/mr-lexus/harnesscope/releases/download/v0.2.2/harnesscope-v0.2.2-x86_64-unknown-linux-gnu.tar.gz"
+    sha256 "0a0440a8578ecefb7e62113ee2a9ddec87af8900cfa1349806eb61442cf31b01"
   end
 
   def install
