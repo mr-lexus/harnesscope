@@ -85,3 +85,34 @@ PostgreSQL is intentionally out of scope for the local MVP. It will become neces
 3. High-throughput distributed tracing with partitioned event streaming across thousands of agents is required.
 
 The repository layer in `src/storage/` deliberately separates storage access from domain models to enable plugging in alternative storage engines in the future.
+
+---
+
+## 4. Agent Session Identity, Forking, and Conflict Detection
+
+### Native Session Tracking
+Harnesscope records native conversation IDs when a supported wrapper can read them from runner arguments or environment variables. It reuses a session only when the runner name and native ID match. If the ID is unavailable, the session remains `UNKNOWN`; Harnesscope does not infer identity from time, branch, or worktree.
+
+### Session Forking & Lineage Tree
+Developers frequently branch off existing conversations to explore alternative architectural ideas or test different prompt strategies without destroying earlier turns:
+- **Parent-Child Association**: When parent metadata can be linked to a known session, Harnesscope records `parent_session_id`, `fork_reason`, and `forked_at`.
+- **Lineage Navigation**: The Web UI links to parent sessions and lists child forks.
+
+### Session-Level Conflict Detection
+Git tracking detects uncommitted filesystem dirty states, but **session-level conflict detection** operates at the agent workflow level:
+1. **Concurrent Session Access (`CONCURRENT_SESSION_ACCESS`)**:
+   Recorded when separate runtimes have active executions in the same logical session.
+2. **Fork Divergence (`FORK_DIVERGENCE`)**:
+   Recorded when active executions overlap between sessions in the same known parent-child lineage, regardless of which session started first.
+3. **Worktree Overlap (`WORKTREE_OVERLAP`)**:
+   Recorded when different sessions have active executions in the same worktree. Git attribution for all overlapping executions is marked `AMBIGUOUS`.
+
+---
+
+## 5. Atomic Multi-Wrapper Daemon Lifeline
+
+When multiple wrappers start at the exact same millisecond:
+- Each wrapper checks `GET /health` with a fast 200ms timeout.
+- If the server is offline, an atomic OS-level file lock (`harnesscope_server_startup.lock` via `create_new(true)`) guarantees that **only one wrapper** spawns the background server daemon.
+- Other wrappers wait for the health check for up to three seconds, then attach if the server is ready.
+- The lock file is removed after startup coordination so later wrappers can retry if the server exits.

@@ -586,6 +586,76 @@ impl Repository {
         })
     }
 
+    pub fn list_active_execution_refs_in_worktree(
+        &self,
+        worktree_path: &str,
+        exclude_exec_id: &str,
+    ) -> Result<Vec<(String, String)>> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                r#"
+                SELECT id, session_id FROM executions
+                WHERE worktree_path = ?1 AND status = 'RUNNING' AND id != ?2
+                ORDER BY started_at
+                "#,
+            )?;
+            let rows = stmt.query_map(params![worktree_path, exclude_exec_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?;
+            let mut executions = Vec::new();
+            for row in rows {
+                executions.push(row?);
+            }
+            Ok(executions)
+        })
+    }
+
+    pub fn list_active_execution_refs_in_fork_lineage(
+        &self,
+        session_id: &str,
+        exclude_exec_id: &str,
+    ) -> Result<Vec<(String, String)>> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                r#"
+                WITH RECURSIVE
+                ancestors(id) AS (
+                    SELECT parent_session_id FROM sessions
+                    WHERE id = ?1 AND parent_session_id IS NOT NULL
+                    UNION
+                    SELECT s.parent_session_id FROM sessions s
+                    JOIN ancestors a ON s.id = a.id
+                    WHERE s.parent_session_id IS NOT NULL
+                ),
+                descendants(id) AS (
+                    SELECT id FROM sessions WHERE parent_session_id = ?1
+                    UNION
+                    SELECT s.id FROM sessions s
+                    JOIN descendants d ON s.parent_session_id = d.id
+                ),
+                related_sessions(id) AS (
+                    SELECT id FROM ancestors
+                    UNION
+                    SELECT id FROM descendants
+                )
+                SELECT e.id, e.session_id FROM executions e
+                WHERE e.session_id IN (SELECT id FROM related_sessions)
+                  AND e.status = 'RUNNING'
+                  AND e.id != ?2
+                ORDER BY e.started_at
+                "#,
+            )?;
+            let rows = stmt.query_map(params![session_id, exclude_exec_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?;
+            let mut executions = Vec::new();
+            for row in rows {
+                executions.push(row?);
+            }
+            Ok(executions)
+        })
+    }
+
     pub fn update_execution_git_attribution(&self, id: &str, attribution: &str) -> Result<()> {
         self.db.with_conn(|conn| {
             conn.execute(

@@ -617,3 +617,124 @@ fn test_fork_divergence_conflict() {
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].conflict_type, "FORK_DIVERGENCE");
 }
+
+// 15. Cross-session worktree overlap is recorded and marks both runs ambiguous
+#[test]
+fn test_worktree_overlap_conflict_marks_both_attributions_ambiguous() {
+    let (repo, _tmp) = make_test_repo();
+    let engine = CorrelationEngine::new(repo.clone());
+
+    for (event_id, runtime_id, session_id, native_id) in [
+        ("evt_worktree_session_a", "run_worktree_a", "sess_worktree_a", "native_a"),
+        ("evt_worktree_session_b", "run_worktree_b", "sess_worktree_b", "native_b"),
+    ] {
+        let event = IngestEvent {
+            event_id: event_id.to_string(),
+            timestamp: "2026-09-27T11:00:00Z".to_string(),
+            event_type: "session.identified".to_string(),
+            source: "wrapper".to_string(),
+            runtime_id: Some(runtime_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            execution_id: None,
+            agent_instance_id: None,
+            payload: serde_json::json!({ "runner_name": "codex", "native_session_id": native_id }),
+            extra: HashMap::new(),
+        };
+        engine.process_event(&event).unwrap();
+    }
+
+    for (event_id, runtime_id, session_id, execution_id, timestamp) in [
+        ("evt_worktree_exec_a", "run_worktree_a", "sess_worktree_a", "exec_worktree_a", "2026-09-27T11:01:00Z"),
+        ("evt_worktree_exec_b", "run_worktree_b", "sess_worktree_b", "exec_worktree_b", "2026-09-27T11:02:00Z"),
+    ] {
+        let event = IngestEvent {
+            event_id: event_id.to_string(),
+            timestamp: timestamp.to_string(),
+            event_type: "execution.started".to_string(),
+            source: "wrapper".to_string(),
+            runtime_id: Some(runtime_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            execution_id: Some(execution_id.to_string()),
+            agent_instance_id: None,
+            payload: serde_json::json!({ "model": "gpt-4o", "worktree_path": "/workspace/shared" }),
+            extra: HashMap::new(),
+        };
+        engine.process_event(&event).unwrap();
+    }
+
+    assert_eq!(
+        repo.find_execution_by_id("exec_worktree_a").unwrap().unwrap().git_attribution,
+        "AMBIGUOUS"
+    );
+    assert_eq!(
+        repo.find_execution_by_id("exec_worktree_b").unwrap().unwrap().git_attribution,
+        "AMBIGUOUS"
+    );
+    let conflicts = repo.list_conflicts_for_session("sess_worktree_b").unwrap();
+    assert!(conflicts.iter().any(|conflict| conflict.conflict_type == "WORKTREE_OVERLAP"));
+}
+
+// 16. Fork divergence is detected even when the parent starts after the child
+#[test]
+fn test_fork_divergence_when_parent_starts_after_child() {
+    let (repo, _tmp) = make_test_repo();
+    let engine = CorrelationEngine::new(repo.clone());
+
+    let parent = IngestEvent {
+        event_id: "evt_parent_late".to_string(),
+        timestamp: "2026-09-27T12:00:00Z".to_string(),
+        event_type: "session.identified".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_parent_late".to_string()),
+        session_id: Some("sess_parent_late".to_string()),
+        execution_id: None,
+        agent_instance_id: None,
+        payload: serde_json::json!({ "runner_name": "codex", "native_session_id": "parent-native-late" }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&parent).unwrap();
+
+    let child = IngestEvent {
+        event_id: "evt_child_early".to_string(),
+        timestamp: "2026-09-27T12:01:00Z".to_string(),
+        event_type: "session.identified".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_child_early".to_string()),
+        session_id: Some("sess_child_early".to_string()),
+        execution_id: None,
+        agent_instance_id: None,
+        payload: serde_json::json!({
+            "runner_name": "codex",
+            "native_session_id": "child-native-early",
+            "parent_session_id": "parent-native-late"
+        }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&child).unwrap();
+
+    for (event_id, runtime_id, session_id, execution_id, timestamp) in [
+        ("evt_child_exec_early", "run_child_early", "sess_child_early", "exec_child_early", "2026-09-27T12:02:00Z"),
+        ("evt_parent_exec_late", "run_parent_late", "sess_parent_late", "exec_parent_late", "2026-09-27T12:03:00Z"),
+    ] {
+        let event = IngestEvent {
+            event_id: event_id.to_string(),
+            timestamp: timestamp.to_string(),
+            event_type: "execution.started".to_string(),
+            source: "wrapper".to_string(),
+            runtime_id: Some(runtime_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            execution_id: Some(execution_id.to_string()),
+            agent_instance_id: None,
+            payload: serde_json::json!({ "model": "gpt-4o" }),
+            extra: HashMap::new(),
+        };
+        engine.process_event(&event).unwrap();
+    }
+
+    let conflicts = repo.list_conflicts_for_session("sess_child_early").unwrap();
+    assert!(conflicts.iter().any(|conflict| {
+        conflict.conflict_type == "FORK_DIVERGENCE"
+            && conflict.session_id == "sess_parent_late"
+            && conflict.conflicting_session_id.as_deref() == Some("sess_child_early")
+    }));
+}

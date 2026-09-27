@@ -1,6 +1,6 @@
 use chrono::Utc;
 use rusqlite::Result;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use crate::domain::events::IngestEvent;
@@ -10,14 +10,17 @@ use crate::storage::Repository;
 
 pub struct CorrelationEngine {
     repo: Arc<Repository>,
+    process_lock: Mutex<()>,
 }
 
 impl CorrelationEngine {
     pub fn new(repo: Arc<Repository>) -> Self {
-        Self { repo }
+        Self { repo, process_lock: Mutex::new(()) }
     }
 
     pub fn process_event(&self, event: &IngestEvent) -> Result<String> {
+        // Keep read-check-write correlation decisions consistent across concurrent HTTP requests.
+        let _guard = self.process_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let timestamp = if event.timestamp.is_empty() {
             Utc::now().to_rfc3339()
         } else {
@@ -290,18 +293,18 @@ impl CorrelationEngine {
         let branch = p.get("branch").and_then(|v| v.as_str()).map(|s| s.to_string());
         let head_sha = p.get("head_sha").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-        // Git attribution check:
-        // If another execution is currently RUNNING in the same worktree -> AMBIGUOUS!
-        let git_attribution = if let Some(wt) = &worktree_path {
-            let active_count = self.repo.count_active_executions_in_worktree(wt, &execution_id)?;
-            if active_count > 0 {
-                // If there's already an active execution in this worktree, both are ambiguous!
-                "AMBIGUOUS".to_string()
-            } else {
-                "OBSERVED".to_string()
-            }
+        // If another execution is active in this worktree, neither run can claim the Git changes alone.
+        let active_worktree_executions = if let Some(wt) = worktree_path.as_deref() {
+            self.repo.list_active_execution_refs_in_worktree(wt, &execution_id)?
         } else {
+            Vec::new()
+        };
+        let git_attribution = if worktree_path.is_none() {
             "UNKNOWN".to_string()
+        } else if active_worktree_executions.is_empty() {
+            "OBSERVED".to_string()
+        } else {
+            "AMBIGUOUS".to_string()
         };
 
         let execution = Execution {
@@ -329,6 +332,33 @@ impl CorrelationEngine {
 
         self.repo.save_execution(&execution)?;
 
+        for (active_execution_id, active_session_id) in &active_worktree_executions {
+            self.repo.update_execution_git_attribution(active_execution_id, "AMBIGUOUS")?;
+
+            if active_session_id != &session_id {
+                let conflict_id = format!(
+                    "conf_worktree_{}",
+                    sha256_digest(&format!("{}:{}", execution_id, active_execution_id))
+                );
+                let conflict = SessionConflict {
+                    id: conflict_id,
+                    session_id: session_id.clone(),
+                    conflicting_session_id: Some(active_session_id.clone()),
+                    execution_id: Some(execution_id.clone()),
+                    conflict_type: "WORKTREE_OVERLAP".to_string(),
+                    severity: "WARNING".to_string(),
+                    detected_at: timestamp.to_string(),
+                    resolved_at: None,
+                    details_json: Some(serde_json::json!({
+                        "active_execution_id": active_execution_id,
+                        "active_session_id": active_session_id,
+                        "message": "Independent sessions have active executions in the same worktree; Git attribution is ambiguous"
+                    }).to_string()),
+                };
+                self.repo.save_session_conflict(&conflict)?;
+            }
+        }
+
         // Session-level conflict detection:
         // 1. Concurrent Session Access (two separate runtimes actively running in the same session):
         if let Ok(Some(active_exec)) = self.repo.find_active_execution_in_session(&session_id, &execution_id) {
@@ -354,30 +384,31 @@ impl CorrelationEngine {
             }
         }
 
-        // 2. Fork Divergence (parent session and child fork running concurrently):
-        if let Ok(Some(current_session)) = self.repo.find_session_by_id(&session_id) {
-            if let Some(parent_id) = &current_session.parent_session_id {
-                if let Ok(Some(parent_exec)) = self.repo.find_active_execution_in_session(parent_id, &execution_id) {
-                    let conflict_id = format!("conf_fork_{}", Uuid::new_v4().simple());
-                    let conflict = SessionConflict {
-                        id: conflict_id,
-                        session_id: session_id.clone(),
-                        conflicting_session_id: Some(parent_id.clone()),
-                        execution_id: Some(execution_id.clone()),
-                        conflict_type: "FORK_DIVERGENCE".to_string(),
-                        severity: "WARNING".to_string(),
-                        detected_at: timestamp.to_string(),
-                        resolved_at: None,
-                        details_json: Some(serde_json::json!({
-                            "parent_session_id": parent_id,
-                            "forked_session_id": session_id,
-                            "parent_execution_id": parent_exec.id,
-                            "message": "Parent session and forked session are running concurrent turns simultaneously"
-                        }).to_string()),
-                    };
-                    let _ = self.repo.save_session_conflict(&conflict);
-                }
-            }
+        // 2. Fork Divergence (any ancestor or descendant session running at the same time).
+        for (active_execution_id, active_session_id) in self.repo.list_active_execution_refs_in_fork_lineage(
+            &session_id,
+            &execution_id,
+        )? {
+            let conflict_id = format!(
+                "conf_fork_{}",
+                sha256_digest(&format!("{}:{}", execution_id, active_execution_id))
+            );
+            let conflict = SessionConflict {
+                id: conflict_id,
+                session_id: session_id.clone(),
+                conflicting_session_id: Some(active_session_id.clone()),
+                execution_id: Some(execution_id.clone()),
+                conflict_type: "FORK_DIVERGENCE".to_string(),
+                severity: "WARNING".to_string(),
+                detected_at: timestamp.to_string(),
+                resolved_at: None,
+                details_json: Some(serde_json::json!({
+                    "active_session_id": active_session_id,
+                    "active_execution_id": active_execution_id,
+                    "message": "Related sessions in the same fork lineage are running concurrent turns"
+                }).to_string()),
+            };
+            self.repo.save_session_conflict(&conflict)?;
         }
 
         // Also create a default main agent instance if role is known
