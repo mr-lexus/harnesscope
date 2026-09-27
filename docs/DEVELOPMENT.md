@@ -7,7 +7,7 @@ This document provides developer guidelines for building, testing, extending, an
 ## 1. Prerequisites
 
 - **Rust toolchain**: 1.80+ (`cargo`, `rustc`)
-- **Node.js**: v18+ with `npm`
+- **Node.js**: v20.19+ or v22.12+ with `npm` (Node.js 24 LTS recommended)
 - **Git**: 2.30+ installed and available on PATH
 - **Supported OS**: Windows 10/11, macOS (Intel/Apple Silicon), Linux (Ubuntu, Debian, Fedora, Arch)
 

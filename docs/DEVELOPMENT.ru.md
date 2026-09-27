@@ -7,7 +7,7 @@
 ## 1. Системные требования
 
 - **Rust toolchain**: 1.80+ (`cargo`, `rustc`)
-- **Node.js**: v18+ с `npm`
+- **Node.js**: v20.19+ или v22.12+ с `npm` (рекомендуется Node.js 24 LTS)
 - **Git**: 2.30+ установлен и доступен в PATH
 - **Поддерживаемые ОС**: Windows 10/11, macOS (Intel/Apple Silicon), Linux (Ubuntu, Debian, Fedora, Arch)
 
