@@ -7,12 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v0.1.0)'
+        description: 'Release tag (e.g. v0.2.2)'
         required: true
-        default: 'v0.2.1'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -44,7 +43,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set version variable
         shell: bash
@@ -56,9 +55,9 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Build Web UI
         shell: bash
@@ -103,7 +102,7 @@ jobs:
           "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: |
@@ -113,9 +112,12 @@ jobs:
     name: Create GitHub Release
     needs: [build]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set version variable
         shell: bash
@@ -127,7 +129,7 @@ jobs:
           fi
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -146,7 +148,7 @@ jobs:
           cd ..
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.VERSION }}
           name: Harnesscope ${{ env.VERSION }}
@@ -205,11 +207,14 @@ jobs:
           cat Formula/harnesscope.rb
 
       - name: Update Homebrew Tap (if PAT configured)
-        if: env.TAP_TOKEN != ''
         shell: bash
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GH_PAT }}
         run: |
+          if [[ -z "$TAP_TOKEN" ]]; then
+            echo "::notice title=Homebrew tap sync skipped::Configure HOMEBREW_TAP_TOKEN (or GH_PAT) to enable automatic tap updates."
+            exit 0
+          fi
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git clone https://x-access-token:${TAP_TOKEN}@github.com/mr-lexus/homebrew-tap.git tap-repo
