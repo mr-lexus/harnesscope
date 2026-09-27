@@ -1,0 +1,217 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_format: tar.gz
+            bin_name: harnesscope
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive_format: tar.gz
+            bin_name: harnesscope
+
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive_format: tar.gz
+            bin_name: harnesscope
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_format: zip
+            bin_name: harnesscope.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set version variable
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Web UI
+        shell: bash
+        run: |
+          cd web
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build binary
+        shell: bash
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Package artifact (Unix)
+        if: matrix.archive_format == 'tar.gz'
+        shell: bash
+        run: |
+          ARCHIVE_NAME="harnesscope-${{ env.VERSION }}-${{ matrix.target }}.tar.gz"
+          cp target/${{ matrix.target }}/release/${{ matrix.bin_name }} ./
+          tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md LICENSE 2>/dev/null || tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md
+          shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+      - name: Package artifact (Windows)
+        if: matrix.archive_format == 'zip'
+        shell: bash
+        run: |
+          ARCHIVE_NAME="harnesscope-${{ env.VERSION }}-${{ matrix.target }}.zip"
+          cp target/${{ matrix.target }}/release/${{ matrix.bin_name }} ./
+          7z a "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md
+          shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            harnesscope-${{ env.VERSION }}-${{ matrix.target }}.*
+
+  publish:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set version variable
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          fi
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize assets & create checksums
+        shell: bash
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} dist/ \;
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Harnesscope ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Homebrew Formula
+        shell: bash
+        run: |
+          ARM64_MAC_SHA=$(sha256sum dist/*-aarch64-apple-darwin.tar.gz | awk '{print $1}')
+          INTEL_MAC_SHA=$(sha256sum dist/*-x86_64-apple-darwin.tar.gz | awk '{print $1}')
+          LINUX_SHA=$(sha256sum dist/*-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          CLEAN_VER="${VERSION#v}"
+
+          cat <<EOF > Formula/harnesscope.rb
+          class Harnesscope < Formula
+            desc "Local cross-platform telemetry utility for AI coding agents"
+            homepage "https://github.com/mr-lexus/harnesscope"
+            version "${CLEAN_VER}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM64_MAC_SHA}"
+              else
+                url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${INTEL_MAC_SHA}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${LINUX_SHA}"
+            end
+
+            def install
+              bin.install "harnesscope"
+            end
+
+            service do
+              run [opt_bin/"harnesscope", "serve"]
+              keep_alive true
+              log_path var/"log/harnesscope.log"
+              error_log_path var/"log/harnesscope.error.log"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/harnesscope --version")
+              assert_match "Harnesscope", shell_output("#{bin}/harnesscope --help")
+            end
+          end
+          EOF
+          sed -i 's/^          //' Formula/harnesscope.rb
+          cat Formula/harnesscope.rb
+
+      - name: Update Homebrew Tap (if PAT configured)
+        if: env.TAP_TOKEN != ''
+        shell: bash
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GH_PAT }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone https://x-access-token:${TAP_TOKEN}@github.com/mr-lexus/homebrew-tap.git tap-repo
+          cp Formula/harnesscope.rb tap-repo/Formula/harnesscope.rb
+          cd tap-repo
+          git add Formula/harnesscope.rb
+          git commit -m "Update harnesscope formula to ${VERSION}" || echo "No changes"
+          git push origin main
+

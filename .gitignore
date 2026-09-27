@@ -1,0 +1,17 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# Node / Vite build artifacts
+node_modules/
+web/node_modules/
+web/dist/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+
+# OS files
+.DS_Store
+Thumbs.db

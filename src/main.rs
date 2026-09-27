@@ -1,0 +1,329 @@
+use clap::Parser;
+use std::net::SocketAddr;
+use std::path::Path;
+use std::sync::Arc;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use harnesscope::cli::{Cli, Commands, DemoAction, ServerAction};
+use harnesscope::config::Config;
+use harnesscope::demo;
+use harnesscope::git;
+use harnesscope::runners::discovery::discover_runner_binary;
+use harnesscope::runners::{execute_wrapper, execute_wrapper_generic, spawn_background_server};
+use harnesscope::server::correlation::CorrelationEngine;
+use harnesscope::server::handlers::AppState;
+use harnesscope::server::routes::build_router;
+use harnesscope::storage::{Database, Repository};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+    let config = Config::load();
+    config.ensure_data_dir()?;
+
+    match cli.command {
+        Commands::Codex { args } => {
+            let code = execute_wrapper("codex", &args, &config.server_url());
+            std::process::exit(code);
+        }
+        Commands::Copilot { args } => {
+            let code = execute_wrapper("copilot", &args, &config.server_url());
+            std::process::exit(code);
+        }
+        Commands::Opencode { args } => {
+            let code = execute_wrapper("opencode", &args, &config.server_url());
+            std::process::exit(code);
+        }
+        Commands::Run {
+            runner,
+            gui,
+            command,
+            args,
+        } => {
+            let runner_name = runner.unwrap_or_else(|| {
+                Path::new(&command)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("agent")
+                    .to_lowercase()
+            });
+
+            let surface = if gui
+                || ["cursor", "code", "windsurf", "zed"].contains(&runner_name.as_str())
+            {
+                "gui"
+            } else {
+                "cli"
+            };
+
+            let code = execute_wrapper_generic(
+                &runner_name,
+                surface,
+                &command,
+                &args,
+                &config.server_url(),
+            );
+            std::process::exit(code);
+        }
+        Commands::Serve { host, port } => {
+            init_tracing();
+            run_server(&host, port, &config).await?;
+        }
+        Commands::Server { action } => match action {
+            ServerAction::Status => {
+                check_server_status(&config).await;
+            }
+            ServerAction::Start { port } => {
+                let url = format!("http://127.0.0.1:{}", port);
+                let health_url = format!("{}/api/v1/health", url);
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_millis(500))
+                    .build()?;
+
+                if client
+                    .get(&health_url)
+                    .send()
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    println!("Harnesscope Server is already running at {}", url);
+                    return Ok(());
+                }
+
+                let current_exe = std::env::current_exe()?;
+                spawn_background_server(&current_exe, port)?;
+                println!("Starting Harnesscope server in background on port {}...", port);
+
+                let mut started = false;
+                for _ in 0..10 {
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    if client
+                        .get(&health_url)
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                    {
+                        started = true;
+                        break;
+                    }
+                }
+
+                if started {
+                    println!("✓ Harnesscope Server started successfully at {}", url);
+                } else {
+                    println!("Server process spawned. Check status with: harnesscope server status");
+                }
+            }
+            ServerAction::Stop { port } => {
+                let url = format!("http://127.0.0.1:{}", port);
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_millis(1000))
+                    .build()?;
+
+                match client.post(format!("{}/api/v1/shutdown", url)).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("✓ Harnesscope Server stopped.");
+                    }
+                    _ => {
+                        println!("Harnesscope server was not running or not responding at {}", url);
+                    }
+                }
+            }
+        },
+        Commands::Ui { port } => {
+            let url = format!("http://127.0.0.1:{}", port);
+            println!("Opening Harnesscope Web UI: {}", url);
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_millis(500))
+                .build()?;
+
+            let is_running = client
+                .get(format!("{}/api/v1/health", url))
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false);
+
+            if !is_running {
+                let current_exe = std::env::current_exe()?;
+                if spawn_background_server(&current_exe, port).is_ok() {
+                    println!("Started Harnesscope server in background on port {}.", port);
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                }
+            }
+            let _ = open::that(&url);
+        }
+        Commands::Doctor => {
+            run_doctor(&config).await;
+        }
+        Commands::Demo { action } => match action {
+            DemoAction::Seed => {
+                let db = Database::open(&config.db_path)?;
+                let repo = Repository::new(db);
+                let msg = demo::seed_demo_data(&repo)?;
+                println!("✓ {}", msg);
+                println!("Data location: {:?}", config.db_path);
+                println!("You can now run 'harnesscope serve' or 'harnesscope ui' to explore the demo data.");
+            }
+        },
+    }
+
+    Ok(())
+}
+
+fn init_tracing() {
+    let _ = tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "harnesscope=info,tower_http=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .try_init();
+}
+
+async fn run_server(host: &str, port: u16, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let db = Database::open(&config.db_path)?;
+    let repo = Arc::new(Repository::new(db));
+    let engine = Arc::new(CorrelationEngine::new(repo.clone()));
+
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
+
+    let state = AppState {
+        repo: repo.clone(),
+        engine,
+        shutdown_tx: Some(shutdown_tx),
+    };
+
+    let router = build_router(state);
+    let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+
+    println!("============================================================");
+    println!("  Harnesscope Server v{} (Cross-Platform Telemetry)", env!("CARGO_PKG_VERSION"));
+    println!("============================================================");
+    println!("  SQLite Database : {:?}", config.db_path);
+    println!("  API Endpoint    : http://{}:{}/api/v1", host, port);
+    println!("  Web UI          : http://{}:{}", host, port);
+    println!("  Status          : Listening on localhost");
+    println!("============================================================");
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.recv().await;
+        })
+        .await?;
+
+    Ok(())
+}
+
+async fn check_server_status(config: &Config) {
+    let url = config.server_url();
+    let health_url = format!("{}/api/v1/health", url);
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1000))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            println!("Harnesscope Server Status: Error creating HTTP client: {}", e);
+            return;
+        }
+    };
+
+    match client.get(&health_url).send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    println!("✓ Harnesscope Server is RUNNING at {}", url);
+                    println!("  Version           : {}", json.get("version").and_then(|v| v.as_str()).unwrap_or("unknown"));
+                    println!("  Active Executions : {}", json.get("active_executions").and_then(|v| v.as_i64()).unwrap_or(0));
+                    println!("  Active Runtimes   : {}", json.get("active_runtimes").and_then(|v| v.as_i64()).unwrap_or(0));
+                    println!("  Total Executions  : {}", json.get("total_executions").and_then(|v| v.as_i64()).unwrap_or(0));
+                    println!("  Total Sessions    : {}", json.get("total_sessions").and_then(|v| v.as_i64()).unwrap_or(0));
+                } else {
+                    println!("✓ Harnesscope Server is RUNNING at {} (health response received)", url);
+                }
+            } else {
+                println!("! Harnesscope Server returned status: {}", resp.status());
+            }
+        }
+        Err(_) => {
+            println!("✗ Harnesscope Server is NOT running at {}", url);
+            println!("  Start it with: harnesscope serve");
+        }
+    }
+}
+
+async fn run_doctor(config: &Config) {
+    println!("============================================================");
+    println!("  Harnesscope Doctor — System & Telemetry Diagnostics");
+    println!("============================================================");
+
+    // Platform
+    println!("Platform:");
+    println!("  OS                : {}", std::env::consts::OS);
+    println!("  Arch              : {}", std::env::consts::ARCH);
+    println!("  Data directory    : {:?}", config.data_dir);
+    println!("  Database path     : {:?}", config.db_path);
+
+    // DB Check
+    print!("SQLite Database     : ");
+    match Database::open(&config.db_path) {
+        Ok(_) => println!("✓ OK (Accessible, migrations applied, WAL enabled)"),
+        Err(e) => println!("✗ ERROR ({})", e),
+    }
+
+    // Git Check
+    print!("Git Executable      : ");
+    if git::is_git_available() {
+        println!("✓ OK (git installed and available on PATH)");
+    } else {
+        println!("! WARNING (git not found on PATH; Git telemetry will be UNKNOWN)");
+    }
+
+    // Runner discovery
+    println!("\nRunner & Environment Discovery:");
+    let runners = [
+        ("Codex CLI", "codex", "HARNESSCOPE_CODEX_BIN"),
+        ("Copilot CLI", "copilot", "HARNESSCOPE_COPILOT_BIN"),
+        ("OpenCode CLI/TUI", "opencode", "HARNESSCOPE_OPENCODE_BIN"),
+        ("Cursor Editor", "cursor", "HARNESSCOPE_CURSOR_BIN"),
+        ("VS Code", "code", "HARNESSCOPE_CODE_BIN"),
+    ];
+
+    for (label, name, env_var) in runners {
+        let found = discover_runner_binary(name).or_else(|| harnesscope::runners::discovery::find_executable(name));
+        match found {
+            Some(path) => {
+                println!("  {:<18}: ✓ FOUND at {:?}", label, path);
+            }
+            None => {
+                println!("  {:<18}: - NOT FOUND (can specify via {})", label, env_var);
+            }
+        }
+    }
+
+    // Server check
+    println!("\nHarnesscope Server:");
+    let url = config.server_url();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(500))
+        .build();
+
+    let server_ok = if let Ok(c) = client {
+        c.get(format!("{}/api/v1/health", url)).send().await.map(|r| r.status().is_success()).unwrap_or(false)
+    } else {
+        false
+    };
+
+    if server_ok {
+        println!("  Local Server      : ✓ RUNNING at {}", url);
+    } else {
+        println!("  Local Server      : - NOT RUNNING (run 'harnesscope serve' to start)");
+    }
+
+    println!("============================================================");
+}
+
