@@ -32,7 +32,7 @@ jobs:
             archive_format: tar.gz
             bin_name: harnesscope
 
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             archive_format: tar.gz
             bin_name: harnesscope
@@ -84,19 +84,23 @@ jobs:
         run: |
           ARCHIVE_NAME="harnesscope-${{ env.VERSION }}-${{ matrix.target }}.tar.gz"
           cp target/${{ matrix.target }}/release/${{ matrix.bin_name }} ./
-          tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md LICENSE 2>/dev/null || tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md
-          shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
-          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+          tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
+          else
+            shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
+          fi
 
       - name: Package artifact (Windows)
         if: matrix.archive_format == 'zip'
-        shell: bash
+        shell: pwsh
         run: |
-          ARCHIVE_NAME="harnesscope-${{ env.VERSION }}-${{ matrix.target }}.zip"
-          cp target/${{ matrix.target }}/release/${{ matrix.bin_name }} ./
-          7z a "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md
-          shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
-          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+          $ver = "${{ env.VERSION }}"
+          $archive = "harnesscope-$ver-${{ matrix.target }}.zip"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
+          Compress-Archive -Path "${{ matrix.bin_name }}", "README.md" -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -133,7 +137,11 @@ jobs:
           mkdir -p dist
           find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} dist/ \;
           cd dist
-          sha256sum * > checksums.txt
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum * > checksums.txt
+          else
+            shasum -a 256 * > checksums.txt
+          fi
           cat checksums.txt
           cd ..
 
