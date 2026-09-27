@@ -7,7 +7,9 @@ pub fn parse_opencode_args_and_env(args: &[String], cwd: &Path) -> RunnerMetadat
     let mut meta = RunnerMetadata {
         runner_name: "opencode".to_string(),
         runner_version: "UNKNOWN".to_string(),
-        native_session_id: "UNKNOWN".to_string(),
+        native_session_id: std::env::var("HARNESSCOPE_SESSION_ID").unwrap_or_else(|_| "UNKNOWN".to_string()),
+        parent_session_id: std::env::var("HARNESSCOPE_PARENT_SESSION_ID").ok(),
+        fork_reason: None,
         model: "UNKNOWN".to_string(),
         reasoning_effort: "UNKNOWN".to_string(),
         selected_agent_role: "UNKNOWN".to_string(),
@@ -26,6 +28,11 @@ pub fn parse_opencode_args_and_env(args: &[String], cwd: &Path) -> RunnerMetadat
         } else if arg.starts_with("--session=") {
             meta.native_session_id = arg.trim_start_matches("--session=").to_string();
             i += 1;
+            continue;
+        } else if (arg == "--parent-session" || arg == "--fork-from") && i + 1 < args.len() {
+            meta.parent_session_id = Some(args[i + 1].clone());
+            meta.fork_reason = Some("FORK_ARG".to_string());
+            i += 2;
             continue;
         } else if (arg == "--agent" || arg == "-a") && i + 1 < args.len() {
             meta.selected_agent_role = args[i + 1].clone();

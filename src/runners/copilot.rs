@@ -7,7 +7,9 @@ pub fn parse_copilot_args_and_env(args: &[String], cwd: &Path) -> RunnerMetadata
     let mut meta = RunnerMetadata {
         runner_name: "copilot".to_string(),
         runner_version: "UNKNOWN".to_string(),
-        native_session_id: "UNKNOWN".to_string(),
+        native_session_id: std::env::var("HARNESSCOPE_SESSION_ID").unwrap_or_else(|_| "UNKNOWN".to_string()),
+        parent_session_id: std::env::var("HARNESSCOPE_PARENT_SESSION_ID").ok(),
+        fork_reason: None,
         model: "UNKNOWN".to_string(),
         reasoning_effort: "UNKNOWN".to_string(),
         selected_agent_role: "UNKNOWN".to_string(),
@@ -33,6 +35,11 @@ pub fn parse_copilot_args_and_env(args: &[String], cwd: &Path) -> RunnerMetadata
             continue;
         } else if (arg == "--session" || arg == "-s") && i + 1 < args.len() {
             meta.native_session_id = args[i + 1].clone();
+            i += 2;
+            continue;
+        } else if (arg == "--parent-session" || arg == "--fork-from") && i + 1 < args.len() {
+            meta.parent_session_id = Some(args[i + 1].clone());
+            meta.fork_reason = Some("FORK_ARG".to_string());
             i += 2;
             continue;
         } else if !arg.starts_with('-') && meta.prompt_summary.is_none() {

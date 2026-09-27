@@ -20,6 +20,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/sessions", get(list_sessions_handler))
         .route("/sessions/:id", get(get_session_detail_handler))
         .route("/stats", get(get_stats_handler))
+        .route("/conflicts", get(list_conflicts_handler))
         .route("/events", post(ingest_events_handler))
         .route("/demo/seed", post(seed_demo_handler))
         .route("/shutdown", post(shutdown_handler));

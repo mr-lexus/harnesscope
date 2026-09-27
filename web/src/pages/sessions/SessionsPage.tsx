@@ -112,9 +112,21 @@ export const SessionsPage: React.FC = () => {
                     onClick={() => navigate(`/sessions/${sess.id}`)}
                   >
                     <Table.Td>
-                      <Text fw={600} size="sm">
-                        {sess.title || 'Untitled Conversation'}
-                      </Text>
+                      <Group gap="xs" align="center">
+                        <Text fw={600} size="sm">
+                          {sess.title || 'Untitled Conversation'}
+                        </Text>
+                        {sess.parent_session_id && (
+                          <Badge size="xs" variant="outline" color="orange">
+                            Fork of {sess.parent_session_id.substring(0, 14)}...
+                          </Badge>
+                        )}
+                        {sess.conflicts_count && sess.conflicts_count > 0 ? (
+                          <Badge size="xs" variant="filled" color="red">
+                            ⚠️ {sess.conflicts_count} Conflict{sess.conflicts_count > 1 ? 's' : ''}
+                          </Badge>
+                        ) : null}
+                      </Group>
                       <Group gap={6} mt={2}>
                         <Text size="xs" c="dimmed">Native ID:</Text>
                         <Code style={{ fontSize: '11px' }}>

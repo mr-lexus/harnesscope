@@ -27,6 +27,22 @@ pub struct Session {
     pub ended_at: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub parent_session_id: Option<String>,
+    pub fork_reason: Option<String>,
+    pub forked_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionConflict {
+    pub id: String,
+    pub session_id: String,
+    pub conflicting_session_id: Option<String>,
+    pub execution_id: Option<String>,
+    pub conflict_type: String,
+    pub severity: String,
+    pub detected_at: String,
+    pub resolved_at: Option<String>,
+    pub details_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

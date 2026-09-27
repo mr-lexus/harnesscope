@@ -40,6 +40,10 @@ pub struct SessionWithStats {
     pub runtime_count: i64,
     pub resume_count: i64,
     pub last_active_at: String,
+    pub parent_session_id: Option<String>,
+    pub fork_reason: Option<String>,
+    pub forked_at: Option<String>,
+    pub conflicts_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +64,7 @@ pub struct StatsSummary {
     pub total_executions: i64,
     pub total_sessions: i64,
     pub total_runtimes: i64,
+    pub total_conflicts: i64,
     pub by_runner: Vec<KeyCount>,
     pub by_model: Vec<KeyCount>,
     pub by_reasoning: Vec<KeyCount>,
@@ -167,7 +172,8 @@ impl Repository {
         self.db.with_conn(|conn| {
             let res = conn.query_row(
                 r#"
-                SELECT id, runner_name, native_session_id, title, started_at, ended_at, status, created_at
+                SELECT id, runner_name, native_session_id, title, started_at, ended_at, status, created_at,
+                       parent_session_id, fork_reason, forked_at
                 FROM sessions
                 WHERE runner_name = ?1 AND native_session_id = ?2
                 ORDER BY created_at DESC LIMIT 1
@@ -183,6 +189,9 @@ impl Repository {
                         ended_at: row.get(5)?,
                         status: row.get(6)?,
                         created_at: row.get(7)?,
+                        parent_session_id: row.get(8)?,
+                        fork_reason: row.get(9)?,
+                        forked_at: row.get(10)?,
                     })
                 },
             ).optional()?;
@@ -194,7 +203,8 @@ impl Repository {
         self.db.with_conn(|conn| {
             let res = conn.query_row(
                 r#"
-                SELECT id, runner_name, native_session_id, title, started_at, ended_at, status, created_at
+                SELECT id, runner_name, native_session_id, title, started_at, ended_at, status, created_at,
+                       parent_session_id, fork_reason, forked_at
                 FROM sessions WHERE id = ?1
                 "#,
                 params![id],
@@ -208,6 +218,9 @@ impl Repository {
                         ended_at: row.get(5)?,
                         status: row.get(6)?,
                         created_at: row.get(7)?,
+                        parent_session_id: row.get(8)?,
+                        fork_reason: row.get(9)?,
+                        forked_at: row.get(10)?,
                     })
                 },
             ).optional()?;
@@ -219,14 +232,23 @@ impl Repository {
         self.db.with_conn(|conn| {
             conn.execute(
                 r#"
-                INSERT INTO sessions (id, runner_name, native_session_id, title, started_at, ended_at, status, created_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                INSERT INTO sessions (
+                    id, runner_name, native_session_id, title, started_at, ended_at,
+                    status, created_at, parent_session_id, fork_reason, forked_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 ON CONFLICT(id) DO UPDATE SET
                     title = COALESCE(excluded.title, sessions.title),
                     ended_at = excluded.ended_at,
-                    status = excluded.status
+                    status = excluded.status,
+                    parent_session_id = COALESCE(excluded.parent_session_id, sessions.parent_session_id),
+                    fork_reason = COALESCE(excluded.fork_reason, sessions.fork_reason),
+                    forked_at = COALESCE(excluded.forked_at, sessions.forked_at)
                 "#,
-                params![s.id, s.runner_name, s.native_session_id, s.title, s.started_at, s.ended_at, s.status, s.created_at],
+                params![
+                    s.id, s.runner_name, s.native_session_id, s.title, s.started_at, s.ended_at,
+                    s.status, s.created_at, s.parent_session_id, s.fork_reason, s.forked_at
+                ],
             )?;
             Ok(())
         })
@@ -287,6 +309,167 @@ impl Repository {
                 list.push(r?);
             }
             Ok(list)
+        })
+    }
+
+    pub fn save_session_conflict(&self, sc: &SessionConflict) -> Result<()> {
+        self.db.with_conn(|conn| {
+            conn.execute(
+                r#"
+                INSERT INTO session_conflicts (
+                    id, session_id, conflicting_session_id, execution_id, conflict_type,
+                    severity, detected_at, resolved_at, details_json
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                ON CONFLICT(id) DO UPDATE SET
+                    resolved_at = excluded.resolved_at,
+                    details_json = excluded.details_json
+                "#,
+                params![
+                    sc.id, sc.session_id, sc.conflicting_session_id, sc.execution_id,
+                    sc.conflict_type, sc.severity, sc.detected_at, sc.resolved_at, sc.details_json
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn list_conflicts_for_session(&self, session_id: &str) -> Result<Vec<SessionConflict>> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                r#"
+                SELECT id, session_id, conflicting_session_id, execution_id, conflict_type,
+                       severity, detected_at, resolved_at, details_json
+                FROM session_conflicts
+                WHERE session_id = ?1 OR conflicting_session_id = ?1
+                ORDER BY detected_at DESC
+                "#,
+            )?;
+            let rows = stmt.query_map(params![session_id], |row| {
+                Ok(SessionConflict {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    conflicting_session_id: row.get(2)?,
+                    execution_id: row.get(3)?,
+                    conflict_type: row.get(4)?,
+                    severity: row.get(5)?,
+                    detected_at: row.get(6)?,
+                    resolved_at: row.get(7)?,
+                    details_json: row.get(8)?,
+                })
+            })?;
+            let mut list = Vec::new();
+            for r in rows {
+                list.push(r?);
+            }
+            Ok(list)
+        })
+    }
+
+    pub fn list_all_conflicts(&self) -> Result<Vec<SessionConflict>> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                r#"
+                SELECT id, session_id, conflicting_session_id, execution_id, conflict_type,
+                       severity, detected_at, resolved_at, details_json
+                FROM session_conflicts
+                ORDER BY detected_at DESC
+                LIMIT 100
+                "#,
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(SessionConflict {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    conflicting_session_id: row.get(2)?,
+                    execution_id: row.get(3)?,
+                    conflict_type: row.get(4)?,
+                    severity: row.get(5)?,
+                    detected_at: row.get(6)?,
+                    resolved_at: row.get(7)?,
+                    details_json: row.get(8)?,
+                })
+            })?;
+            let mut list = Vec::new();
+            for r in rows {
+                list.push(r?);
+            }
+            Ok(list)
+        })
+    }
+
+    pub fn list_child_forks(&self, parent_session_id: &str) -> Result<Vec<Session>> {
+        self.db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                r#"
+                SELECT id, runner_name, native_session_id, title, started_at, ended_at, status, created_at,
+                       parent_session_id, fork_reason, forked_at
+                FROM sessions
+                WHERE parent_session_id = ?1
+                ORDER BY created_at ASC
+                "#,
+            )?;
+            let rows = stmt.query_map(params![parent_session_id], |row| {
+                Ok(Session {
+                    id: row.get(0)?,
+                    runner_name: row.get(1)?,
+                    native_session_id: row.get(2)?,
+                    title: row.get(3)?,
+                    started_at: row.get(4)?,
+                    ended_at: row.get(5)?,
+                    status: row.get(6)?,
+                    created_at: row.get(7)?,
+                    parent_session_id: row.get(8)?,
+                    fork_reason: row.get(9)?,
+                    forked_at: row.get(10)?,
+                })
+            })?;
+            let mut list = Vec::new();
+            for r in rows {
+                list.push(r?);
+            }
+            Ok(list)
+        })
+    }
+
+    pub fn find_active_execution_in_session(&self, session_id: &str, exclude_exec_id: &str) -> Result<Option<Execution>> {
+        self.db.with_conn(|conn| {
+            let res = conn.query_row(
+                r#"
+                SELECT id, session_id, runtime_id, native_execution_id, turn_index,
+                       prompt_summary, model, reasoning_effort, selected_agent_role,
+                       started_at, ended_at, duration_ms, status, exit_code, error_message,
+                       repo_root, worktree_path, branch, head_sha, git_attribution
+                FROM executions
+                WHERE session_id = ?1 AND status = 'RUNNING' AND id != ?2
+                LIMIT 1
+                "#,
+                params![session_id, exclude_exec_id],
+                |row| {
+                    Ok(Execution {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        runtime_id: row.get(2)?,
+                        native_execution_id: row.get(3)?,
+                        turn_index: row.get(4)?,
+                        prompt_summary: row.get(5)?,
+                        model: row.get(6)?,
+                        reasoning_effort: row.get(7)?,
+                        selected_agent_role: row.get(8)?,
+                        started_at: row.get(9)?,
+                        ended_at: row.get(10)?,
+                        duration_ms: row.get(11)?,
+                        status: row.get(12)?,
+                        exit_code: row.get(13)?,
+                        error_message: row.get(14)?,
+                        repo_root: row.get(15)?,
+                        worktree_path: row.get(16)?,
+                        branch: row.get(17)?,
+                        head_sha: row.get(18)?,
+                        git_attribution: row.get(19)?,
+                    })
+                },
+            ).optional()?;
+            Ok(res)
         })
     }
 
@@ -882,10 +1065,15 @@ impl Repository {
                        COUNT(DISTINCT e.id) as exec_count,
                        COUNT(DISTINCT b.runtime_id) as runtime_count,
                        SUM(CASE WHEN b.reason = 'RESUME' THEN 1 ELSE 0 END) as resume_count,
-                       COALESCE(MAX(e.started_at), s.started_at) as last_active_at
+                       COALESCE(MAX(e.started_at), s.started_at) as last_active_at,
+                       s.parent_session_id,
+                       s.fork_reason,
+                       s.forked_at,
+                       COUNT(DISTINCT sc.id) as conflicts_count
                 FROM sessions s
                 LEFT JOIN executions e ON s.id = e.session_id
                 LEFT JOIN runtime_session_bindings b ON s.id = b.session_id
+                LEFT JOIN session_conflicts sc ON (s.id = sc.session_id OR s.id = sc.conflicting_session_id)
                 {}
                 GROUP BY s.id
                 ORDER BY last_active_at DESC
@@ -911,6 +1099,10 @@ impl Repository {
                         runtime_count: row.get(9)?,
                         resume_count: row.get(10)?,
                         last_active_at: row.get(11)?,
+                        parent_session_id: row.get(12)?,
+                        fork_reason: row.get(13)?,
+                        forked_at: row.get(14)?,
+                        conflicts_count: row.get(15)?,
                     })
                 },
             )?;
@@ -973,6 +1165,7 @@ impl Repository {
             let total_executions: i64 = conn.query_row("SELECT COUNT(*) FROM executions", [], |r| r.get(0))?;
             let total_sessions: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))?;
             let total_runtimes: i64 = conn.query_row("SELECT COUNT(*) FROM runtime_instances", [], |r| r.get(0))?;
+            let total_conflicts: i64 = conn.query_row("SELECT COUNT(*) FROM session_conflicts", [], |r| r.get(0)).unwrap_or(0);
 
             // by_runner
             let mut stmt = conn.prepare(
@@ -1062,6 +1255,7 @@ impl Repository {
                 total_executions,
                 total_sessions,
                 total_runtimes,
+                total_conflicts,
                 by_runner,
                 by_model,
                 by_reasoning,

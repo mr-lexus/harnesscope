@@ -20,8 +20,28 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         ended_at: None,
         status: "ACTIVE".to_string(),
         created_at: (base_time).to_rfc3339(),
+        parent_session_id: None,
+        fork_reason: None,
+        forked_at: None,
     };
     repo.save_session(&sess1)?;
+
+    // Session 1 Fork: developer forked off Turn 2 to test PASETO tokens
+    let sess1_fork_id = "sess_codex_demo_01_paseto".to_string();
+    let sess1_fork = Session {
+        id: sess1_fork_id.clone(),
+        runner_name: "codex".to_string(),
+        native_session_id: "codex-thread-8841-fork-paseto".to_string(),
+        title: Some("Experiment: PASETO tokens instead of JWT".to_string()),
+        started_at: (base_time + Duration::minutes(26)).to_rfc3339(),
+        ended_at: None,
+        status: "ACTIVE".to_string(),
+        created_at: (base_time + Duration::minutes(26)).to_rfc3339(),
+        parent_session_id: Some(sess1_id.clone()),
+        fork_reason: Some("MANUAL_BRANCH".to_string()),
+        forked_at: Some((base_time + Duration::minutes(26)).to_rfc3339()),
+    };
+    repo.save_session(&sess1_fork)?;
 
     // Runtime 1A (Codex process 1)
     let run1a_id = "run_codex_proc_101".to_string();
@@ -175,6 +195,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         ended_at: Some(parallel_end.to_rfc3339()),
         status: "COMPLETED".to_string(),
         created_at: parallel_start.to_rfc3339(),
+        parent_session_id: None,
+        fork_reason: None,
+        forked_at: None,
     };
     repo.save_session(&sess2)?;
 
@@ -242,6 +265,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         ended_at: Some(parallel_end.to_rfc3339()),
         status: "COMPLETED".to_string(),
         created_at: (parallel_start + Duration::minutes(2)).to_rfc3339(),
+        parent_session_id: None,
+        fork_reason: None,
+        forked_at: None,
     };
     repo.save_session(&sess3)?;
 
@@ -310,8 +336,25 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         ended_at: Some((sess4_start + Duration::minutes(5)).to_rfc3339()),
         status: "COMPLETED".to_string(),
         created_at: sess4_start.to_rfc3339(),
+        parent_session_id: None,
+        fork_reason: None,
+        forked_at: None,
     };
     repo.save_session(&sess4)?;
+
+    // Demo Session Conflict: Concurrent overlap between OpenCode and Copilot sessions
+    let demo_conflict = SessionConflict {
+        id: "conf_demo_shared_wt_01".to_string(),
+        session_id: sess2_id.clone(),
+        conflicting_session_id: Some(sess3_id.clone()),
+        execution_id: Some(exec4_id.clone()),
+        conflict_type: "WORKTREE_OVERLAP".to_string(),
+        severity: "WARNING".to_string(),
+        detected_at: parallel_start.to_rfc3339(),
+        resolved_at: None,
+        details_json: Some(r#"{"message": "Two independent agent sessions concurrently modified C:/projects/shared-repo"}"#.to_string()),
+    };
+    repo.save_session_conflict(&demo_conflict)?;
 
     let run4_id = "run_opencode_proc_401".to_string();
     let run4 = RuntimeInstance {

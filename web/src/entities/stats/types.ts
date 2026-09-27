@@ -13,6 +13,7 @@ export interface StatsSummary {
   total_executions: number;
   total_sessions: number;
   total_runtimes: number;
+  total_conflicts: number;
   by_runner: KeyCount[];
   by_model: KeyCount[];
   by_reasoning: KeyCount[];

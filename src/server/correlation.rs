@@ -125,6 +125,29 @@ impl CorrelationEngine {
 
         let title = p.get("title").and_then(|v| v.as_str()).map(|v| v.to_string());
 
+        let raw_parent = p.get("parent_session_id")
+            .or_else(|| p.get("fork_from"))
+            .and_then(|v| v.as_str());
+
+        let parent_session_id = if let Some(parent_str) = raw_parent {
+            if let Ok(Some(parent_by_native)) = self.repo.find_session_by_native_id(runner_name, parent_str) {
+                Some(parent_by_native.id)
+            } else if let Ok(Some(parent_by_id)) = self.repo.find_session_by_id(parent_str) {
+                Some(parent_by_id.id)
+            } else {
+                Some(parent_str.to_string())
+            }
+        } else {
+            None
+        };
+
+        let fork_reason = p.get("fork_reason")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| if parent_session_id.is_some() { Some("BRANCH".to_string()) } else { None });
+
+        let forked_at = if parent_session_id.is_some() { Some(timestamp.to_string()) } else { None };
+
         // Check if session with native_id exists for this runner
         let (session_id, is_resume) = if native_id != "UNKNOWN" && !native_id.is_empty() {
             if let Some(existing) = self.repo.find_session_by_native_id(runner_name, native_id)? {
@@ -140,6 +163,9 @@ impl CorrelationEngine {
                     ended_at: None,
                     status: "ACTIVE".to_string(),
                     created_at: timestamp.to_string(),
+                    parent_session_id,
+                    fork_reason,
+                    forked_at,
                 };
                 self.repo.save_session(&s)?;
                 (new_id, false)
@@ -155,6 +181,9 @@ impl CorrelationEngine {
                 ended_at: None,
                 status: "ACTIVE".to_string(),
                 created_at: timestamp.to_string(),
+                parent_session_id,
+                fork_reason,
+                forked_at,
             };
             self.repo.save_session(&s)?;
             (new_id, false)
@@ -235,6 +264,9 @@ impl CorrelationEngine {
                 ended_at: None,
                 status: "ACTIVE".to_string(),
                 created_at: timestamp.to_string(),
+                parent_session_id: None,
+                fork_reason: None,
+                forked_at: None,
             };
             self.repo.save_session(&stub_session)?;
         }
@@ -274,8 +306,8 @@ impl CorrelationEngine {
 
         let execution = Execution {
             id: execution_id.clone(),
-            session_id,
-            runtime_id,
+            session_id: session_id.clone(),
+            runtime_id: runtime_id.clone(),
             native_execution_id,
             turn_index,
             prompt_summary,
@@ -296,6 +328,57 @@ impl CorrelationEngine {
         };
 
         self.repo.save_execution(&execution)?;
+
+        // Session-level conflict detection:
+        // 1. Concurrent Session Access (two separate runtimes actively running in the same session):
+        if let Ok(Some(active_exec)) = self.repo.find_active_execution_in_session(&session_id, &execution_id) {
+            if active_exec.runtime_id != runtime_id {
+                let conflict_id = format!("conf_sess_{}", Uuid::new_v4().simple());
+                let conflict = SessionConflict {
+                    id: conflict_id,
+                    session_id: session_id.clone(),
+                    conflicting_session_id: None,
+                    execution_id: Some(execution_id.clone()),
+                    conflict_type: "CONCURRENT_SESSION_ACCESS".to_string(),
+                    severity: "CRITICAL".to_string(),
+                    detected_at: timestamp.to_string(),
+                    resolved_at: None,
+                    details_json: Some(serde_json::json!({
+                        "runtime_a": active_exec.runtime_id,
+                        "runtime_b": runtime_id,
+                        "active_execution_id": active_exec.id,
+                        "message": "Multiple separate agent runtimes are concurrently executing within the same logical session"
+                    }).to_string()),
+                };
+                let _ = self.repo.save_session_conflict(&conflict);
+            }
+        }
+
+        // 2. Fork Divergence (parent session and child fork running concurrently):
+        if let Ok(Some(current_session)) = self.repo.find_session_by_id(&session_id) {
+            if let Some(parent_id) = &current_session.parent_session_id {
+                if let Ok(Some(parent_exec)) = self.repo.find_active_execution_in_session(parent_id, &execution_id) {
+                    let conflict_id = format!("conf_fork_{}", Uuid::new_v4().simple());
+                    let conflict = SessionConflict {
+                        id: conflict_id,
+                        session_id: session_id.clone(),
+                        conflicting_session_id: Some(parent_id.clone()),
+                        execution_id: Some(execution_id.clone()),
+                        conflict_type: "FORK_DIVERGENCE".to_string(),
+                        severity: "WARNING".to_string(),
+                        detected_at: timestamp.to_string(),
+                        resolved_at: None,
+                        details_json: Some(serde_json::json!({
+                            "parent_session_id": parent_id,
+                            "forked_session_id": session_id,
+                            "parent_execution_id": parent_exec.id,
+                            "message": "Parent session and forked session are running concurrent turns simultaneously"
+                        }).to_string()),
+                    };
+                    let _ = self.repo.save_session_conflict(&conflict);
+                }
+            }
+        }
 
         // Also create a default main agent instance if role is known
         let main_agent_id = format!("agent_{}", Uuid::new_v4().simple());

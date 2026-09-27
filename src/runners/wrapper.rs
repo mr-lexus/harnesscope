@@ -48,18 +48,58 @@ pub fn ensure_server_running(server_url: &str) {
     };
 
     let health_url = format!("{}/api/v1/health", server_url.trim_end_matches('/'));
+    // Fast path: server is already running
     if client.get(&health_url).send().map(|r| r.status().is_success()).unwrap_or(false) {
         return;
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = spawn_background_server(&exe, 4242);
-        for _ in 0..6 {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            if client.get(&health_url).send().map(|r| r.status().is_success()).unwrap_or(false) {
+    // Inter-process startup lock ensures multiple wrappers starting simultaneously spawn only 1 server
+    let lock_path = std::env::temp_dir().join("harnesscope_server_startup.lock");
+    let mut got_lock = false;
+
+    for _ in 0..3 {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+            Ok(_) => {
+                got_lock = true;
                 break;
             }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // If lock file is older than 8 seconds, consider it stale from a dead process
+                if let Ok(metadata) = std::fs::metadata(&lock_path) {
+                    if let Ok(modified) = metadata.modified() {
+                        if let Ok(elapsed) = modified.elapsed() {
+                            if elapsed > std::time::Duration::from_secs(8) {
+                                let _ = std::fs::remove_file(&lock_path);
+                                continue;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            Err(_) => break,
         }
+    }
+
+    if got_lock {
+        // Double check health in case another process just started it
+        if !client.get(&health_url).send().map(|r| r.status().is_success()).unwrap_or(false) {
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = spawn_background_server(&exe, 4242);
+            }
+        }
+    }
+
+    // Wait for server to become responsive
+    for _ in 0..30 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if client.get(&health_url).send().map(|r| r.status().is_success()).unwrap_or(false) {
+            break;
+        }
+    }
+
+    if got_lock {
+        let _ = std::fs::remove_file(&lock_path);
     }
 }
 
@@ -80,7 +120,9 @@ fn parse_generic_args_and_env(runner_name: &str, args: &[String], _cwd: &Path) -
     let mut meta = RunnerMetadata {
         runner_name: runner_name.to_string(),
         runner_version: "UNKNOWN".to_string(),
-        native_session_id: "UNKNOWN".to_string(),
+        native_session_id: std::env::var("HARNESSCOPE_SESSION_ID").unwrap_or_else(|_| "UNKNOWN".to_string()),
+        parent_session_id: std::env::var("HARNESSCOPE_PARENT_SESSION_ID").ok(),
+        fork_reason: None,
         model: "UNKNOWN".to_string(),
         reasoning_effort: "UNKNOWN".to_string(),
         selected_agent_role: "UNKNOWN".to_string(),
@@ -98,6 +140,11 @@ fn parse_generic_args_and_env(runner_name: &str, args: &[String], _cwd: &Path) -
             continue;
         } else if (arg == "--session" || arg == "-s") && i + 1 < args.len() {
             meta.native_session_id = args[i + 1].clone();
+            i += 2;
+            continue;
+        } else if (arg == "--parent-session" || arg == "--fork-from") && i + 1 < args.len() {
+            meta.parent_session_id = Some(args[i + 1].clone());
+            meta.fork_reason = Some("FORK_ARG".to_string());
             i += 2;
             continue;
         } else if (arg == "--agent" || arg == "-a") && i + 1 < args.len() {
@@ -190,6 +237,8 @@ pub fn execute_wrapper_generic(
         payload: serde_json::json!({
             "runner_name": runner_name,
             "native_session_id": meta.native_session_id,
+            "parent_session_id": meta.parent_session_id,
+            "fork_reason": meta.fork_reason,
             "title": meta.prompt_summary,
         }),
         extra: std::collections::HashMap::new(),

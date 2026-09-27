@@ -41,7 +41,7 @@ export const Header: React.FC = () => {
               </Title>
               <Group gap={6} mt={2}>
                 <Badge size="xs" variant="outline" color="blue">
-                  MVP v0.1.0
+                  v0.2.0
                 </Badge>
                 <Badge size="xs" variant="dot" color={health?.db_connected ? 'green' : 'red'}>
                   {health?.db_connected ? 'SQLite WAL' : 'Offline'}

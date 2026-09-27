@@ -46,6 +46,8 @@ pub struct SessionDetailResponse {
     pub bindings: Vec<RuntimeSessionBinding>,
     pub executions: Vec<Execution>,
     pub events: Vec<Event>,
+    pub child_forks: Vec<Session>,
+    pub conflicts: Vec<SessionConflict>,
 }
 
 #[derive(Serialize)]
@@ -198,6 +200,8 @@ pub async fn get_session_detail_handler(
             let bindings = state.repo.list_bindings_for_session(&id).unwrap_or_default();
             let executions = state.repo.list_executions_for_session(&id).unwrap_or_default();
             let events = state.repo.list_events_for_session(&id).unwrap_or_default();
+            let child_forks = state.repo.list_child_forks(&id).unwrap_or_default();
+            let conflicts = state.repo.list_conflicts_for_session(&id).unwrap_or_default();
 
             (
                 StatusCode::OK,
@@ -206,6 +210,8 @@ pub async fn get_session_detail_handler(
                     bindings,
                     executions,
                     events,
+                    child_forks,
+                    conflicts,
                 }).unwrap()),
             )
         }
@@ -213,6 +219,16 @@ pub async fn get_session_detail_handler(
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": "Session not found" })),
         ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+pub async fn list_conflicts_handler(State(state): State<AppState>) -> impl IntoResponse {
+    match state.repo.list_all_conflicts() {
+        Ok(conflicts) => (StatusCode::OK, Json(serde_json::to_value(conflicts).unwrap())),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),

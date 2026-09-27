@@ -447,3 +447,173 @@ fn test_generic_wrapper_execution() {
     let code = execute_wrapper_generic("custom_agent", "gui", "nonexistent_custom_cmd", &[], "http://127.0.0.1:4242");
     assert_eq!(code, 1);
 }
+
+// 12. Session forking test
+#[test]
+fn test_session_forking() {
+    let (repo, _tmp) = make_test_repo();
+    let engine = CorrelationEngine::new(repo.clone());
+
+    // Parent session
+    let ev_parent = IngestEvent {
+        event_id: "evt_parent".to_string(),
+        timestamp: "2026-09-27T10:00:00Z".to_string(),
+        event_type: "session.identified".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_p".to_string()),
+        session_id: Some("sess_parent_01".to_string()),
+        execution_id: None,
+        agent_instance_id: None,
+        payload: serde_json::json!({
+            "runner_name": "codex",
+            "native_session_id": "thread-main-01",
+            "title": "Main architectural design",
+        }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_parent).unwrap();
+
+    // Forked session branching from parent
+    let ev_fork = IngestEvent {
+        event_id: "evt_fork".to_string(),
+        timestamp: "2026-09-27T10:30:00Z".to_string(),
+        event_type: "session.identified".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_f".to_string()),
+        session_id: Some("sess_fork_01".to_string()),
+        execution_id: None,
+        agent_instance_id: None,
+        payload: serde_json::json!({
+            "runner_name": "codex",
+            "native_session_id": "thread-fork-01",
+            "parent_session_id": "thread-main-01",
+            "fork_reason": "EXPERIMENT",
+            "title": "Experimental microservice refactoring",
+        }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_fork).unwrap();
+
+    let child_forks = repo.list_child_forks("sess_parent_01").unwrap();
+    assert_eq!(child_forks.len(), 1);
+    assert_eq!(child_forks[0].id, "sess_fork_01");
+    assert_eq!(child_forks[0].fork_reason.as_deref(), Some("EXPERIMENT"));
+}
+
+// 13. Session-level concurrent access conflict detection
+#[test]
+fn test_session_concurrent_access_conflict() {
+    let (repo, _tmp) = make_test_repo();
+    let engine = CorrelationEngine::new(repo.clone());
+
+    let session_id = "sess_contested_01";
+
+    // Runtime A starts execution in session
+    let ev_exec_a = IngestEvent {
+        event_id: "evt_ea".to_string(),
+        timestamp: "2026-09-27T10:00:00Z".to_string(),
+        event_type: "execution.started".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_proc_a".to_string()),
+        session_id: Some(session_id.to_string()),
+        execution_id: Some("exec_turn_a".to_string()),
+        agent_instance_id: None,
+        payload: serde_json::json!({ "model": "gpt-4o" }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_exec_a).unwrap();
+
+    // While Runtime A is still RUNNING, Runtime B starts an execution in the EXACT SAME session!
+    let ev_exec_b = IngestEvent {
+        event_id: "evt_eb".to_string(),
+        timestamp: "2026-09-27T10:01:00Z".to_string(),
+        event_type: "execution.started".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_proc_b".to_string()), // Different runtime!
+        session_id: Some(session_id.to_string()),
+        execution_id: Some("exec_turn_b".to_string()),
+        agent_instance_id: None,
+        payload: serde_json::json!({ "model": "gpt-4o" }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_exec_b).unwrap();
+
+    let conflicts = repo.list_conflicts_for_session(session_id).unwrap();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].conflict_type, "CONCURRENT_SESSION_ACCESS");
+    assert_eq!(conflicts[0].severity, "CRITICAL");
+}
+
+// 14. Fork divergence conflict detection
+#[test]
+fn test_fork_divergence_conflict() {
+    let (repo, _tmp) = make_test_repo();
+    let engine = CorrelationEngine::new(repo.clone());
+
+    let parent_sess = "sess_parent_conflict";
+    let child_sess = "sess_child_conflict";
+
+    // Setup parent session
+    let ev_p = IngestEvent {
+        event_id: "evt_sp".to_string(),
+        timestamp: "2026-09-27T10:00:00Z".to_string(),
+        event_type: "session.identified".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_p".to_string()),
+        session_id: Some(parent_sess.to_string()),
+        execution_id: None,
+        agent_instance_id: None,
+        payload: serde_json::json!({ "runner_name": "codex", "native_session_id": "p_native" }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_p).unwrap();
+
+    // Setup child session forked from parent
+    let ev_c = IngestEvent {
+        event_id: "evt_sc".to_string(),
+        timestamp: "2026-09-27T10:01:00Z".to_string(),
+        event_type: "session.identified".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_c".to_string()),
+        session_id: Some(child_sess.to_string()),
+        execution_id: None,
+        agent_instance_id: None,
+        payload: serde_json::json!({ "runner_name": "codex", "parent_session_id": parent_sess }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_c).unwrap();
+
+    // Start execution in parent
+    let ev_ep = IngestEvent {
+        event_id: "evt_ep".to_string(),
+        timestamp: "2026-09-27T10:02:00Z".to_string(),
+        event_type: "execution.started".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_p".to_string()),
+        session_id: Some(parent_sess.to_string()),
+        execution_id: Some("exec_parent".to_string()),
+        agent_instance_id: None,
+        payload: serde_json::json!({ "model": "gpt-4o" }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_ep).unwrap();
+
+    // Start execution in child while parent is still running
+    let ev_ec = IngestEvent {
+        event_id: "evt_ec".to_string(),
+        timestamp: "2026-09-27T10:03:00Z".to_string(),
+        event_type: "execution.started".to_string(),
+        source: "wrapper".to_string(),
+        runtime_id: Some("run_c".to_string()),
+        session_id: Some(child_sess.to_string()),
+        execution_id: Some("exec_child".to_string()),
+        agent_instance_id: None,
+        payload: serde_json::json!({ "model": "gpt-4o" }),
+        extra: HashMap::new(),
+    };
+    engine.process_event(&ev_ec).unwrap();
+
+    let conflicts = repo.list_conflicts_for_session(child_sess).unwrap();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].conflict_type, "FORK_DIVERGENCE");
+}

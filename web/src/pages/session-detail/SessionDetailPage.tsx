@@ -57,7 +57,7 @@ export const SessionDetailPage: React.FC = () => {
     );
   }
 
-  const { session, bindings, executions } = data;
+  const { session, bindings, executions, child_forks = [], conflicts = [] } = data;
 
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
@@ -70,6 +70,51 @@ export const SessionDetailPage: React.FC = () => {
         Back to Sessions
       </Button>
 
+      {/* Conflicts Alert Card */}
+      {conflicts.length > 0 && (
+        <Card withBorder radius="md" p="md" mb="lg" style={{ borderColor: 'var(--mantine-color-red-6)', backgroundColor: 'rgba(255, 0, 0, 0.05)' }}>
+          <Group justify="space-between" mb="xs">
+            <Group gap="xs">
+              <span style={{ fontSize: '20px' }}>⚠️</span>
+              <Title order={4} c="red">
+                Session Conflicts Detected ({conflicts.length})
+              </Title>
+            </Group>
+            <Badge color="red" variant="filled">
+              Conflict Resolution Required
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed" mb="sm">
+            Harnesscope monitors session-level access across all agent instances, detecting concurrent access and divergence.
+          </Text>
+          <Stack gap="xs">
+            {conflicts.map((c) => (
+              <Box key={c.id} p="sm" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: '6px', backgroundColor: 'var(--mantine-color-body)' }}>
+                <Group justify="space-between">
+                  <Group gap="xs">
+                    <Badge color={c.severity === 'CRITICAL' ? 'red' : 'yellow'} variant="light">
+                      {c.conflict_type}
+                    </Badge>
+                    <Text size="xs" c="dimmed">Detected: {dayjs(c.detected_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                  </Group>
+                  {c.conflicting_session_id && (
+                    <Button variant="subtle" size="xs" onClick={() => navigate(`/sessions/${c.conflicting_session_id}`)}>
+                      View Conflicting Session
+                    </Button>
+                  )}
+                </Group>
+                {c.details_json && (
+                  <Code block mt="xs" style={{ fontSize: '11px' }}>
+                    {c.details_json}
+                  </Code>
+                )}
+              </Box>
+            ))}
+          </Stack>
+        </Card>
+      )}
+
+      {/* Session Info Card */}
       <Card withBorder radius="md" p="lg" mb="xl">
         <Group justify="space-between" align="flex-start">
           <div>
@@ -89,12 +134,66 @@ export const SessionDetailPage: React.FC = () => {
             <Text size="xs" c="dimmed" mt={4}>
               Internal ID: {session.id} | Created: {dayjs(session.created_at).format('YYYY-MM-DD HH:mm:ss')}
             </Text>
+
+            {/* Parent Fork Info */}
+            {session.parent_session_id && (
+              <Box mt="sm" p="xs" style={{ border: '1px dashed var(--mantine-color-blue-4)', borderRadius: '6px' }}>
+                <Group justify="space-between">
+                  <Group gap="xs">
+                    <Text size="xs" fw={600} c="blue">
+                      🔀 Forked from Parent Session:
+                    </Text>
+                    <Code style={{ fontSize: '11px' }}>{session.parent_session_id}</Code>
+                    {session.fork_reason && (
+                      <Badge size="xs" variant="light" color="indigo">
+                        Reason: {session.fork_reason}
+                      </Badge>
+                    )}
+                  </Group>
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    onClick={() => navigate(`/sessions/${session.parent_session_id}`)}
+                  >
+                    Open Parent Session
+                  </Button>
+                </Group>
+              </Box>
+            )}
           </div>
 
-          <Badge size="lg" variant="light" color="indigo" leftSection={<IconHistory size={16} />}>
-            {bindings.length} Runtimes Bound
-          </Badge>
+          <Group gap="xs">
+            <Badge size="lg" variant="light" color="indigo" leftSection={<IconHistory size={16} />}>
+              {bindings.length} Runtimes Bound
+            </Badge>
+            {child_forks.length > 0 && (
+              <Badge size="lg" variant="outline" color="grape">
+                {child_forks.length} Child Forks
+              </Badge>
+            )}
+          </Group>
         </Group>
+
+        {/* Child Forks Section */}
+        {child_forks.length > 0 && (
+          <Box mt="md" pt="sm" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+            <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb="xs">
+              Branch Lineage / Child Forks ({child_forks.length}):
+            </Text>
+            <Group gap="xs">
+              {child_forks.map((cf) => (
+                <Button
+                  key={cf.id}
+                  variant="default"
+                  size="xs"
+                  onClick={() => navigate(`/sessions/${cf.id}`)}
+                >
+                  🌱 {cf.title || cf.native_session_id || cf.id}
+                </Button>
+              ))}
+            </Group>
+          </Box>
+        )}
       </Card>
 
       <Title order={4} mb="md">

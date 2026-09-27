@@ -26,6 +26,43 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
+    if current_version < 2 {
+        apply_migration_v2(conn)?;
+        conn.execute(
+            "INSERT INTO _schema_migrations (version, applied_at) VALUES (2, datetime('now'))",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn apply_migration_v2(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Add forking fields to sessions
+        ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(id);
+        ALTER TABLE sessions ADD COLUMN fork_reason TEXT;
+        ALTER TABLE sessions ADD COLUMN forked_at TEXT;
+
+        -- Create session_conflicts table
+        CREATE TABLE IF NOT EXISTS session_conflicts (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            conflicting_session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+            execution_id TEXT REFERENCES executions(id) ON DELETE CASCADE,
+            conflict_type TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'WARNING',
+            detected_at TEXT NOT NULL,
+            resolved_at TEXT,
+            details_json TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id);
+        CREATE INDEX IF NOT EXISTS idx_conflicts_session ON session_conflicts(session_id);
+        CREATE INDEX IF NOT EXISTS idx_conflicts_detected ON session_conflicts(detected_at);
+        "#,
+    )?;
     Ok(())
 }
 

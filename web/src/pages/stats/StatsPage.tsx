@@ -58,7 +58,7 @@ export const StatsPage: React.FC = () => {
       </Group>
 
       {/* Overview Cards */}
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md" mb="xl">
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md" mb="xl">
         <Card withBorder radius="md" p="md">
           <Group justify="space-between">
             <Text size="xs" c="dimmed" fw={700} tt="uppercase">Total Executions</Text>
@@ -75,6 +75,17 @@ export const StatsPage: React.FC = () => {
           </Group>
           <Title order={2} mt="xs">{stats.total_sessions}</Title>
           <Text size="xs" c="dimmed" mt={4}>Native agent conversations</Text>
+        </Card>
+
+        <Card withBorder radius="md" p="md">
+          <Group justify="space-between">
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Session Conflicts</Text>
+            <span style={{ fontSize: '18px' }}>⚠️</span>
+          </Group>
+          <Title order={2} mt="xs" c={stats.total_conflicts > 0 ? 'red' : 'dimmed'}>
+            {stats.total_conflicts}
+          </Title>
+          <Text size="xs" c="dimmed" mt={4}>Agent collisions detected</Text>
         </Card>
 
         <Card withBorder radius="md" p="md">
