@@ -26,12 +26,12 @@ jobs:
             archive_format: tar.gz
             bin_name: harnesscope
 
-          - os: macos-latest
+          - os: macos-26
             target: aarch64-apple-darwin
             archive_format: tar.gz
             bin_name: harnesscope
 
-          - os: macos-latest
+          - os: macos-26-intel
             target: x86_64-apple-darwin
             archive_format: tar.gz
             bin_name: harnesscope
