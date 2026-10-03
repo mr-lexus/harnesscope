@@ -1,7 +1,7 @@
 # Retrospective evidence, API and MCP
 
 See [CAPABILITIES.md](CAPABILITIES.md) before interpreting coverage. API version 1
-and evidence format 1 are distinct from SQLite schema 6. Existing `/api/v1/events`
+and evidence format 1 are distinct from SQLite schema 7. Existing `/api/v1/events`
 continues to work without modification.
 
 ## Connect
@@ -18,7 +18,10 @@ harnesscope serve
 
 The Sources panel can switch an existing registration to sanitized evidence and
 replay originals. Do not disconnect the only source just to change its policy.
-On v5 upgrades, a `*.before-v6-*.db` snapshot is created before migration.
+On v5/v6 upgrades, a `*.before-v7-*.db` snapshot is created before migration.
+
+To associate captured task reads with tasks and versions, register a local
+[provider-neutral task adapter](TASK_ADAPTERS.md). No provider is built in.
 
 `capture setup` adds exact own handlers to existing hook arrays and adds local
 OTel JSON only if there is no existing `[otel]`. It preserves existing OTel and

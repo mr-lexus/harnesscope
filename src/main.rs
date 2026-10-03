@@ -21,6 +21,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load();
 
     match cli.command {
+        Commands::TaskAdapters { action } => {
+            use harnesscope::cli::TaskAdapterAction;
+            config.ensure_data_dir()?;
+            let repo = Repository::new(Database::open(&config.db_path)?);
+            let result = match action {
+                TaskAdapterAction::Add { file } => {
+                    use std::io::Read;
+                    let mut bytes = Vec::new();
+                    std::fs::File::open(file)?
+                        .take(16385)
+                        .read_to_end(&mut bytes)?;
+                    if bytes.len() > 16384 {
+                        return Err("Task adapter exceeds 16 KiB".into());
+                    }
+                    let adapter = serde_json::from_slice::<
+                        harnesscope::storage::task_adapters::TaskAdapter,
+                    >(&bytes)
+                    .map_err(|_| "Invalid task adapter JSON; see docs/TASK_ADAPTERS.md")?;
+                    repo.register_task_adapter(&adapter)?;
+                    serde_json::json!({"registered":adapter.id})
+                }
+                TaskAdapterAction::List => repo.task_adapters()?,
+                TaskAdapterAction::Remove { id } => {
+                    serde_json::json!({"disabled":repo.disable_task_adapter(&id)?})
+                }
+            };
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
         Commands::Mcp => {
             let repo = Repository::new(Database::open_read_only(&config.db_path)?);
             harnesscope::mcp::serve(&repo)?;

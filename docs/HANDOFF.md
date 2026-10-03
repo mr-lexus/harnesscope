@@ -2,7 +2,34 @@
 
 Updated 2026-10-03. Workspace: `C:\server\harnesscope` (Windows/PowerShell).
 
-**Current state:** see the final **Installed collector stage** section below. The production collector is installed and running on port **4242** with the user's authorized Codex metadata collection and login startup. Earlier fixture-only and no-personal-import notes describe previous checkpoints. The current priority is reliable collection and retrospective use; a second native adapter is not requested.
+**Current state:** the retrospective candidate is on `codex/retrospective-evidence`,
+version 0.3.0-rc.2, database schema 7. The installed production collector on **4242**
+still uses the earlier metadata build; do not infer that the candidate is installed.
+The candidate preview uses port **4344** and `.audit/evidence-preview-rc1.db`.
+Older sections below are historical checkpoints, including their test counts and
+uncommitted/no-push statements. Consult Git/CI for the latest delivery status.
+
+## Retrospective candidate and task adapters
+
+- Sanitized observations/object archive, replay, native JSONL/gzip/selected SQLite,
+  hook queue, JSON OTLP, workflow snapshots, task outcomes, API/export/import,
+  read-only stdio MCP and compact Evidence panel are implemented.
+- Task trackers use **local provider-neutral mappings** only. Do not hard-code
+  private providers or commit their configuration, names, sample responses or
+  credentials. See `docs/TASK_ADAPTERS.md` and the neutral JSON example.
+- `task-adapters add/list/remove` configures exact tool/JSON Pointer mappings.
+  Schema 7 adds their table; upgrading creates a verified pre-migration backup.
+  Disabled mappings retain tasks and human marks. Reindex can associate already
+  archived calls/results after mapping installation.
+- The previous candidate passed 97 tests and CI on Windows, Linux and macOS.
+  The new adapter regression suite adds mapping/error/identity/privacy/replay and
+  migration/restore coverage. Check the current CI rather than reusing old counts.
+- Primary real macOS GUI, private task-provider scenarios and week-long field
+  acceptance remain pending. CI on macOS is not real GUI acceptance. The canonical
+  support matrix is `docs/CAPABILITIES.md`; follow `docs/ACCEPTANCE.md`.
+- Preserve untracked `copilot-handoff.json`. Never commit `.audit`, native logs,
+  databases or local task mapping files. Do not rewrite published Git history as
+  part of ordinary documentation cleanup.
 
 ## Product intent and authorization
 

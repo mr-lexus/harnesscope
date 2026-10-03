@@ -25,8 +25,13 @@ pub enum Commands {
         #[command(subcommand)]
         action: EvidenceAction,
     },
-    /// Read-only MCP server over stdio (existing schema v6 database required)
+    /// Read-only MCP server over stdio (current database schema required)
     Mcp,
+    /// Configure local mappings for observed task-reading MCP tools
+    TaskAdapters {
+        #[command(subcommand)]
+        action: TaskAdapterAction,
+    },
     /// Run Codex CLI transparently through Harnesscope wrapper
     Codex {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -149,6 +154,16 @@ pub enum EvidenceAction {
     Import {
         path: std::path::PathBuf,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TaskAdapterAction {
+    /// Register a declarative JSON mapping; no network calls or credentials
+    Add { file: std::path::PathBuf },
+    /// Show installed mappings and enabled status
+    List,
+    /// Disable a mapping; preserve observations, tasks and historical versions
+    Remove { id: String },
 }
 
 #[derive(Subcommand, Debug)]

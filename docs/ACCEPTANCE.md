@@ -32,9 +32,11 @@ For each scenario record native session/turn IDs, observation IDs and all gaps.
 3. Compact, interrupt/resume, fork, create/finish a subagent. Verify boundaries,
    parent relationships and usage. Inherited parent work must not increase child
    counters. Unavailable active context must remain unavailable.
-4. Through the agent's existing Vaiz MCP, read a task, modify a fictitious
-   description/comment, read again. Verify versions and call/session links. If the
-   provider shape differs, retain the observation and report the mapper gap.
+4. Register a local [task adapter](TASK_ADAPTERS.md). Through the agent's configured
+   task-tracker MCP, read a task, modify a fictitious description/comment, read
+   again. Verify versions and call/session links. Test an error response and the
+   same ID in two tracker namespaces. If the shape differs, update the local
+   mapping; retain unsupported evidence without guessing links.
 5. Stop the collector, generate hook activity, restart and verify queued delivery.
    Retry and check stable IDs. Pause/resume a source with appended records.
 6. Use a synthetic canary such as `password=harnesscope-test-canary` in messages,

@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::migrations::run_migrations;
+use super::migrations::{run_migrations, SCHEMA_VERSION};
 
 #[derive(Clone)]
 pub struct Database {
@@ -21,7 +21,7 @@ impl Database {
             conn.query_row("SELECT MAX(version) FROM _schema_migrations", [], |r| {
                 r.get(0)
             })?;
-        if version != 6 {
+        if version != SCHEMA_VERSION {
             return Err(rusqlite::Error::InvalidParameterName(
                 "Start Harnesscope to migrate this database before using MCP".into(),
             ));
@@ -41,9 +41,12 @@ impl Database {
                 })
                 .unwrap_or(None);
             drop(old);
-            if version.is_some_and(|v| v < 6) {
+            if version.is_some_and(|v| v < SCHEMA_VERSION) {
                 let mut backup = path.as_os_str().to_owned();
-                backup.push(format!(".before-v6-{}.db", uuid::Uuid::new_v4()));
+                backup.push(format!(
+                    ".before-v{SCHEMA_VERSION}-{}.db",
+                    uuid::Uuid::new_v4()
+                ));
                 super::backup::create(path, Path::new(&backup)).map_err(|_| {
                     rusqlite::Error::InvalidParameterName(
                         "Pre-migration backup failed; database left unchanged".into(),

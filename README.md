@@ -101,7 +101,17 @@ harnesscope demo seed
 
 ---
 
+## Task tracker MCP adapters
+
+Task trackers are connected through your agent's MCP configuration. Harnesscope
+uses a local, declarative adapter to identify task reads in captured calls and
+retain response versions. No tracker provider or credentials are built into this
+repository. Start with `examples/task-adapter.json`, then run
+`harnesscope task-adapters add /path/to/local-mapping.json`.
+
 ## Documentation
+
+- [Connect a task-tracker MCP through local mappings](docs/TASK_ADAPTERS.md)
 
 - [Audit and limitations (Русский)](docs/AUDIT.ru.md)
 - [Product direction and competitors (Русский)](docs/PRODUCT.ru.md)

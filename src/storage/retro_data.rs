@@ -1,6 +1,6 @@
 use super::{evidence::EvidenceFilter, Repository};
 use crate::capture;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::{json, Value};
 
 impl Repository {
@@ -80,47 +80,6 @@ impl Repository {
             let marks:Vec<Value>=c.prepare("SELECT kind,note,created_at FROM task_marks WHERE task_id=?1 ORDER BY id")?.query_map([task],|r|Ok(json!({"kind":r.get::<_,String>(0)?,"note":r.get::<_,String>(1)?,"created_at":r.get::<_,String>(2)?})))?.collect::<rusqlite::Result<_>>()?;
             let versions:Vec<Value>=c.prepare("SELECT id,observation_id,object_hash,observed_at FROM external_task_versions WHERE task_id=?1 ORDER BY observed_at LIMIT 200")?.query_map([task],|r|Ok(json!({"id":r.get::<_,String>(0)?,"observation_id":r.get::<_,String>(1)?,"object_hash":r.get::<_,String>(2)?,"observed_at":r.get::<_,String>(3)?})))?.collect::<rusqlite::Result<_>>()?;
             Ok(json!({"id":task,"links":links,"marks":marks,"versions":versions}))
-        })
-    }
-
-    /// Retain only proven MCP response associations. No network access or guessed
-    /// links from incidental text mentions. Existing task versions never change.
-    pub fn project_vaiz(&self, observation: &str, record: &Value) -> rusqlite::Result<()> {
-        let payload = record.get("payload").unwrap_or(record);
-        let item = payload.get("item").unwrap_or(payload);
-        let call = item["call_id"].as_str().or(item["tool_use_id"].as_str());
-        let Some(call) = call else { return Ok(()) };
-        if item.get("output").is_none() && item.get("tool_response").is_none() {
-            return Ok(());
-        }
-        let row:Option<(String,String,String,String)>=self.db.with_conn(|c|c.query_row("SELECT previous.object_hash,current.session_id,current.object_hash,current.received_at FROM observations current JOIN observations previous ON previous.session_id=current.session_id AND previous.sequence<current.sequence JOIN evidence_items i ON i.observation_id=previous.id WHERE current.id=?1 AND i.call_id=?2 AND lower(i.tool) LIKE '%vaiz%' ORDER BY previous.sequence DESC LIMIT 1",params![observation,call],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional())?;
-        let Some((call_hash, session, hash, time)) = row else {
-            return Ok(());
-        };
-        let Some(invocation) = self.evidence_object(&call_hash)? else {
-            return Ok(());
-        };
-        let p = invocation.get("payload").unwrap_or(&invocation);
-        let p = p.get("item").unwrap_or(p);
-        let args = p
-            .get("arguments")
-            .or(p.get("tool_input"))
-            .cloned()
-            .unwrap_or(Value::Null);
-        let args = if let Some(s) = args.as_str() {
-            serde_json::from_str(s).unwrap_or(Value::Null)
-        } else {
-            args
-        };
-        let Some(native) = args["taskId"].as_str().or(args["task_id"].as_str()) else {
-            return Ok(());
-        };
-        let task = format!("vaiz:{}", capture::metadata(native));
-        self.db.with_conn(|c|{
-            c.execute("INSERT OR IGNORE INTO retro_tasks(id,title,created_at) VALUES(?1,?1,?2)",params![task,time])?;
-            c.execute("INSERT OR IGNORE INTO task_links(task_id,session_id,status,evidence_id) VALUES(?1,?2,'confirmed',?3)",params![task,session,observation])?;
-            c.execute("INSERT OR IGNORE INTO external_task_versions(id,task_id,observation_id,object_hash,observed_at) VALUES(?1,?2,?1,?3,?4)",params![observation,task,hash,time])?;
-            Ok(())
         })
     }
 

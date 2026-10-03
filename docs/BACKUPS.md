@@ -1,11 +1,12 @@
 # Database backup and recovery
 
-Schema 6 snapshots include every referenced sanitized evidence object. External
+Schema 6+ snapshots include every referenced sanitized evidence object. External
 `<database>.objects` files are hash-checked and embedded into the portable SQLite
 backup one object at a time; restore needs only that backup file. Pending
 `<database>.capture` hook records are excluded, like the wrapper outbox. Preserve
-queues separately when moving an offline collector. A pre-v6 database is backed
-up before migration. See [evidence setup](EVIDENCE.md).
+queues separately when moving an offline collector. Schema 7 also includes local
+task-adapter mappings. An older database is backed up before migration to v7;
+existing observations, tasks and marks are retained. See [evidence setup](EVIDENCE.md).
 
 `backup create` uses SQLite's online backup API. Committed records still in WAL are included; copying the `.db` file with a filesystem command while the server is running is not equivalent.
 

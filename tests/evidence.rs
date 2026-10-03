@@ -168,18 +168,19 @@ fn workflow_changes_create_versions_and_credentials_are_never_read() {
 }
 
 #[test]
-fn vaiz_versions_are_proven_by_call_ids_and_do_not_guess_links() {
+fn external_task_versions_are_proven_by_call_ids_and_do_not_guess_links() {
     let repo = Repository::new(Database::open_in_memory().unwrap());
-    for (n,value) in [json!({"type":"response_item","payload":{"type":"function_call","call_id":"v1","name":"mcp__vaiz__get_task","arguments":"{\"taskId\":\"ABC-123\"}"}}),json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"v1","output":{"description":"first"}}}),json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"v1","output":{"description":"updated","comments":["new requirement"]}}})].into_iter().enumerate(){repo.record_observation(&input(&n.to_string()),&capture::sanitize(&value)).unwrap();}
-    let task = repo.retro_task_detail("vaiz:ABC-123").unwrap();
+    repo.register_task_adapter(&serde_json::from_value(json!({"schema_version":1,"id":"tracker-read","namespace":"team","tool":"mcp__tracker__get_task","task_id":{"source":"arguments","pointer":"/taskId"}})).unwrap()).unwrap();
+    for (n,value) in [json!({"type":"response_item","payload":{"type":"function_call","call_id":"v1","name":"mcp__tracker__get_task","arguments":"{\"taskId\":\"ABC-123\"}"}}),json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"v1","output":{"description":"first"}}}),json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"v1","output":{"description":"updated","comments":["new requirement"]}}})].into_iter().enumerate(){repo.record_observation(&input(&n.to_string()),&capture::sanitize(&value)).unwrap();}
+    let task = repo.retro_task_detail("mcp:team:ABC-123").unwrap();
     assert_eq!(task["versions"].as_array().unwrap().len(), 2);
     assert_eq!(task["links"][0]["status"], "confirmed");
     let marks = task["marks"].as_array().unwrap();
     assert!(marks.is_empty());
-    repo.mark_retro_task("vaiz:ABC-123", "accepted", "Reviewed by human")
+    repo.mark_retro_task("mcp:team:ABC-123", "accepted", "Reviewed by human")
         .unwrap();
     assert_eq!(
-        repo.retro_task_detail("vaiz:ABC-123").unwrap()["marks"][0]["kind"],
+        repo.retro_task_detail("mcp:team:ABC-123").unwrap()["marks"][0]["kind"],
         "accepted"
     );
 }

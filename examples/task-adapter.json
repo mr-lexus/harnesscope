@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "id": "tracker-read-task",
+  "namespace": "team-tracker",
+  "tool": "mcp__tracker__get_task",
+  "task_id": { "source": "arguments", "pointer": "/taskId" },
+  "title_pointer": "/title"
+}

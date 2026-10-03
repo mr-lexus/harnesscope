@@ -1,6 +1,6 @@
 # Capture capabilities and acceptance status
 
-This is the canonical support matrix for retrospective evidence (schema 6,
+This is the canonical support matrix for retrospective evidence (schema 7,
 observation/package format 1). A platform CI pass is **not** proof of complete
 capture from a real Codex GUI. No retrospective analyzer skill is shipped here.
 
@@ -46,10 +46,11 @@ capture from a real Codex GUI. No retrospective analyzer skill is shipped here.
   directories, selected TOML config, package scripts. Changes create versions;
   repeated identical content does not. State is `discovered`; this does not prove
   loading or invocation. Native observations can separately supply that evidence.
-- Vaiz: a tool name containing `vaiz`, an explicit `taskId`/`task_id` argument,
-  matching native call ID and matching session link a response version to a task.
-  Unrecognized shapes remain in the archive; no task freshness is invented.
-  No Vaiz credentials, background polling or standalone integration is installed.
+- Task trackers: opt-in local mappings select an exact MCP tool and task ID in
+  arguments or decoded results using JSON Pointers. A matching native call ID and
+  session link a response version to a namespaced task. There are no built-in
+  providers, credentials or background polling. Unrecognized shapes remain in the
+  archive; no task freshness is invented. See [task adapters](TASK_ADAPTERS.md).
 - Human outcomes: accepted, rework, repeated mistake, misunderstanding, successful
   approach. Multiple sessions/turns can be linked to one task. Arbitrary task-ID
   mentions are not automatically confirmed. Git/test/CI/review information is
@@ -74,8 +75,9 @@ the conservative policy. No unrestricted raw-content mode is offered.
 
 ## Storage and reliability
 
-- Migration from v5 first makes a verified backup. Existing events/reviews remain;
-  native checkpoints reset to backfill the new archive from available originals.
+- Migration from v5/v6 first makes a verified backup. Existing events/reviews remain;
+  v5 native checkpoints reset to backfill the archive from available originals.
+  v6 → v7 adds local task mappings without resetting collectors or removing tasks.
 - SQLite indexes small objects inline. Objects above 64 KiB use SHA-256 filenames
   in `<database>.objects`; durable publication precedes database references and
   checkpoint commit. Rollbacks may leave unreferenced sanitized files. Reads and
@@ -115,8 +117,8 @@ Still requires follow-up before declaring the entire design accepted:
    Verify the equivalent macOS formats: explicit fork-parent metadata
    plus native started_at separates the inherited prefix from the child.
    Missing or ambiguous boundary markers must not be treated as complete coverage.
-3. Validate actual Vaiz MCP response shapes and task/comment revisions. The
-   implemented narrow mapping must not be advertised as all Vaiz operations.
+3. Validate each connected task tracker's MCP shapes and task/comment revisions.
+   Synthetic adapter tests do not certify a private provider's real responses.
 4. Workflow snapshots are polling based; missing/disallowed files create exclusion versions; changes shorter than
    the polling interval can still be missed. Exact instruction
    loading and invocation must be established from native evidence.

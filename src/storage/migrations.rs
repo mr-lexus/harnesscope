@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result};
+pub const SCHEMA_VERSION: i64 = 7;
 
 pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -18,7 +19,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         |row| row.get(0),
     )?;
 
-    if current_version > 6 {
+    if current_version > SCHEMA_VERSION {
         return Err(rusqlite::Error::InvalidParameterName(
             "Database schema is newer than this binary".into(),
         ));
@@ -97,6 +98,12 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         // Existing event IDs are idempotent. Replay available originals to fill
         // the new archive; user reviews and all old events remain untouched.
         conn.execute("DELETE FROM source_files", [])?;
+    }
+    if current_version < 7 {
+        conn.execute_batch("CREATE TABLE task_adapters (id TEXT PRIMARY KEY, tool TEXT NOT NULL, config_json TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);
+            CREATE UNIQUE INDEX active_task_adapter_tool ON task_adapters(tool) WHERE enabled=1;
+            CREATE INDEX evidence_items_call ON evidence_items(call_id) WHERE call_id IS NOT NULL;
+            INSERT INTO _schema_migrations(version,applied_at) VALUES(7,datetime('now'));")?;
     }
     tx.commit()
 }
@@ -315,7 +322,7 @@ mod tests {
             conn.query_row("SELECT MAX(version) FROM _schema_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            6
+            SCHEMA_VERSION
         );
     }
     #[test]

@@ -26,3 +26,4 @@ Thumbs.db
 # Local audit artifacts
 .audit/
 *.tsbuildinfo
+task-adapters.local/

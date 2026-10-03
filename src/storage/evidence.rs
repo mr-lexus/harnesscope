@@ -239,7 +239,7 @@ impl Repository {
             let inserted = self.db.with_conn(|c| c.execute("INSERT OR IGNORE INTO observations(id,channel,source,source_version,position,observed_at,received_at,session_id,turn_id,native_id,kind,project,object_hash,disposition,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",params![id,input.channel,input.source,input.source_version,input.position,input.observed_at,chrono::Utc::now().to_rfc3339(),input.session_id,input.turn_id,input.native_id,input.kind,input.project,hash,safe.disposition,safe.reason]))?;
             if inserted > 0 {
                 self.project_observation(&id, safe.value())?;
-                if let Some(value)=safe.value(){self.project_vaiz(&id,value)?;}
+                if let Some(value)=safe.value(){self.project_external_task(&id,value)?;}
             }
             Ok(id.clone())
         })
@@ -348,7 +348,7 @@ impl Repository {
                     .flatten();
                 self.project_observation(item["id"].as_str().unwrap(), value.as_ref())?;
                 if let Some(value) = &value {
-                    self.project_vaiz(item["id"].as_str().unwrap(), value)?;
+                    self.project_external_task(item["id"].as_str().unwrap(), value)?;
                 }
                 count += 1;
             }

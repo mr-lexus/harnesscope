@@ -60,7 +60,7 @@ pub fn verify(path: &Path) -> Result<BackupReport, String> {
             r.get(0)
         })
         .map_err(|e| format!("Not a Harnesscope database: {e}"))?;
-    if !(1..=6).contains(&version) {
+    if !(1..=super::migrations::SCHEMA_VERSION).contains(&version) {
         return Err(format!("Unsupported schema version {version}"));
     }
     for (since, table) in [
@@ -91,6 +91,7 @@ pub fn verify(path: &Path) -> Result<BackupReport, String> {
         (6, "workflow_versions"),
         (6, "external_task_versions"),
         (6, "evidence_cursors"),
+        (7, "task_adapters"),
     ] {
         if version >= since {
             let exists: bool = tx
