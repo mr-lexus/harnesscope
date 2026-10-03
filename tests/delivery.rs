@@ -50,6 +50,30 @@ fn queue_size_migrates_existing_backlog_and_tracks_utf8_rollback_and_ack() {
 }
 
 #[test]
+fn temporary_writer_contention_does_not_drop_durable_events() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("contended.db");
+    let queue = Outbox::open(&path, "http://127.0.0.1:4242").unwrap();
+    let connection =
+        rusqlite::Connection::open(dir.path().join("contended.db.outbox.sqlite3")).unwrap();
+    connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(900));
+        connection.execute_batch("COMMIT").unwrap();
+    });
+    // Previously a 500 ms busy timeout rejected this durable write outright.
+    queue
+        .enqueue("r", &[event("contended", "runtime.started")])
+        .unwrap();
+    release.join().unwrap();
+    assert_eq!(queue.snapshot().unwrap().pending_events, 1);
+    let claim = queue.claim().unwrap().unwrap();
+    assert_eq!(claim.events[0].event_id, "contended");
+    queue.ack(&claim).unwrap();
+    assert_eq!(queue.snapshot().unwrap().pending_events, 0);
+}
+
+#[test]
 fn concurrent_producers_and_consumers_preserve_per_stream_order() {
     use std::sync::Mutex;
     let dir = tempfile::tempdir().unwrap();

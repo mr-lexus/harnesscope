@@ -308,6 +308,12 @@ fn concurrent_offline_wrappers_are_recovered_without_duplicate_executions() {
                     .output()
                     .unwrap();
                 assert_eq!(output.status.code(), Some(7));
+                let diagnostics = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    !diagnostics.contains("durable telemetry unavailable")
+                        && !diagnostics.contains("telemetry could not be queued"),
+                    "Offline wrapper lost telemetry: {diagnostics}"
+                );
             });
         }
     });

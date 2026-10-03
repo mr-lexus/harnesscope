@@ -2,6 +2,8 @@
 
 Wrappers write redacted events to `<HARNESSCOPE_DB_PATH>.outbox.sqlite3` before attempting HTTP delivery. The separate SQLite queue uses WAL and FULL synchronous writes. Starting the child does not wait for server startup or network delivery; inherited stdin/stdout/stderr and the child's exit code remain intact. The wrapper performs bounded delivery work before it exits; unavailable telemetry does not change the agent's result.
 
+Queue connections allow up to five seconds for SQLite writer contention. Concurrent first-time initialization also retries BUSY/LOCKED failures with a fresh connection, including WAL setup failures that can bypass SQLite's busy handler. Exhausted waits and other storage errors remain explicit on stderr; they do not change the child exit code. Existing queued events remain on disk.
+
 ## Recovery
 
 Use the same `HARNESSCOPE_DB_PATH` and loopback server address for wrappers and `serve`. The server drains pending batches every second, including batches left by a wrapper that already exited or crashed. It also continues native source collection independently. Graceful shutdown joins both workers. No machine-wide service, scheduled task or OS autorun is installed.

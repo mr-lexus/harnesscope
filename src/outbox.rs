@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone)]
@@ -57,9 +57,28 @@ impl Outbox {
         if let Some(parent) = this.path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        this.conn()?
-            .execute_batch(
-                "PRAGMA journal_mode=WAL;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match this.initialize() {
+                Ok(()) => return Ok(this),
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if matches!(
+                        error.code,
+                        rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                    ) && Instant::now() < deadline =>
+                {
+                    // Simultaneous first launches can contend while switching to
+                    // WAL; SQLite may return BUSY without invoking its handler.
+                    // initialize drops the connection, rolling back partial DDL.
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
+    fn initialize(&self) -> rusqlite::Result<()> {
+        self.open_connection()?.execute_batch(
+            "PRAGMA journal_mode=WAL;
             BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS batches (
               id INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL,
@@ -83,20 +102,21 @@ impl Outbox {
                 UPDATE queue_usage SET payload_bytes=payload_bytes+length(CAST(NEW.payload AS BLOB))-length(CAST(OLD.payload AS BLOB)) WHERE id=1;
             END;
             COMMIT;",
-            )
-            .map_err(|e| e.to_string())?;
-        Ok(this)
+        )
     }
     pub fn for_stream(mut self, stream: &str) -> Self {
         self.stream = Some(stream.to_string());
         self
     }
     fn conn(&self) -> Result<Connection, String> {
-        let c = Connection::open(&self.path).map_err(|e| e.to_string())?;
-        c.busy_timeout(Duration::from_millis(500))
-            .map_err(|e| e.to_string())?;
-        c.pragma_update(None, "synchronous", "FULL")
-            .map_err(|e| e.to_string())?;
+        self.open_connection().map_err(|e| e.to_string())
+    }
+    fn open_connection(&self) -> rusqlite::Result<Connection> {
+        let c = Connection::open(&self.path)?;
+        // Disk/antivirus contention on Windows can exceed 500 ms during a burst
+        // of wrappers. Bound the wait without dropping ordinary queued writes.
+        c.busy_timeout(Duration::from_secs(5))?;
+        c.pragma_update(None, "synchronous", "FULL")?;
         Ok(c)
     }
     pub fn enqueue(&self, stream: &str, events: &[IngestEvent]) -> Result<(), String> {
