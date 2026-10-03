@@ -143,9 +143,17 @@ impl Repository {
         let Some(raw) = item.get("output").or(item.get("tool_response")) else {
             return Ok(());
         };
+        // Post-tool hooks can prove the invocation and response in one record.
+        // They do not depend on a separate pre-tool hook arriving first.
+        let self_contained = item.get("arguments").or(item.get("tool_input")).is_some()
+            && item
+                .get("name")
+                .or(item.get("tool_name"))
+                .and_then(Value::as_str)
+                .is_some();
         let row: Option<MatchedCall> = self.db.with_conn(|c| c.query_row(
-            "SELECT previous.object_hash,current.session_id,current.object_hash,COALESCE(current.observed_at,current.received_at),a.config_json,current.project FROM observations current JOIN observations previous ON previous.id=(SELECT o.id FROM observations o JOIN evidence_items e ON e.observation_id=o.id WHERE o.session_id=current.session_id AND o.sequence<current.sequence AND e.call_id=?2 AND e.tool IS NOT NULL AND (o.turn_id IS NULL OR current.turn_id IS NULL OR o.turn_id=current.turn_id) ORDER BY o.sequence DESC LIMIT 1) JOIN evidence_items i ON i.observation_id=previous.id JOIN task_adapters a ON a.tool=i.tool AND a.enabled=1 WHERE current.id=?1 AND previous.object_hash IS NOT NULL",
-            params![observation,call], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).optional())?;
+            "SELECT previous.object_hash,current.session_id,current.object_hash,COALESCE(current.observed_at,current.received_at),a.config_json,current.project FROM observations current JOIN observations previous ON previous.id=(SELECT o.id FROM observations o JOIN evidence_items e ON e.observation_id=o.id WHERE o.session_id=current.session_id AND (o.sequence<current.sequence OR (o.id=current.id AND ?3)) AND e.call_id=?2 AND e.tool IS NOT NULL AND (o.turn_id IS NULL OR current.turn_id IS NULL OR o.turn_id=current.turn_id) ORDER BY o.sequence DESC LIMIT 1) JOIN evidence_items i ON i.observation_id=previous.id JOIN task_adapters a ON a.tool=i.tool AND a.enabled=1 WHERE current.id=?1 AND previous.object_hash IS NOT NULL",
+            params![observation,call,self_contained], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).optional())?;
         let Some((call_hash, session, hash, time, config, project)) = row else {
             return Ok(());
         };

@@ -58,6 +58,8 @@ Task identity is `mcp:<namespace>:<native-id>`. A matching invocation and respon
 must share a native call ID and session; conflicting known turn IDs do not match.
 Only the most recent matching invocation is considered, including when it belongs
 to an unregistered tool. Known error results do not become task versions.
+Post-tool hooks containing the tool name, arguments, call ID and response provide
+both sides in one observation; a separate pre-tool record is not required.
 Use task-reading tools: Harnesscope does not infer whether an arbitrary custom
 response semantically means success, nor verify the provider's task freshness.
 

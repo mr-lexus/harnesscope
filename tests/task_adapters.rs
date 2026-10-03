@@ -197,6 +197,32 @@ fn mappings_are_validated_immutable_and_unambiguous() {
 }
 
 #[test]
+fn post_tool_hook_contains_its_own_proven_invocation() {
+    let repo = Repository::new(Database::open_in_memory().unwrap());
+    repo.register_task_adapter(&adapter(
+        "read",
+        "team",
+        "mcp__tracker__read",
+        "arguments",
+        "/id",
+    ))
+    .unwrap();
+    // The pre-tool hook is absent. Both invocation and response are explicit.
+    record(
+        &repo,
+        "post",
+        "session",
+        "turn",
+        json!({"hook_event_name":"PostToolUse","tool_use_id":"hook-call","tool_name":"mcp__tracker__read","tool_input":{"id":"A-1"},"tool_response":{"title":"Read through hook"}}),
+    );
+    let detail = repo.retro_task_detail("mcp:team:A-1").unwrap();
+    assert_eq!(detail["versions"].as_array().unwrap().len(), 1);
+    assert_eq!(detail["links"][0]["status"], "confirmed");
+    repo.reindex_evidence().unwrap();
+    assert_eq!(repo.retro_task_detail("mcp:team:A-1").unwrap(), detail);
+}
+
+#[test]
 fn schema6_migration_backs_up_and_adapters_survive_restore() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("data.db");
