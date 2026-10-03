@@ -1,0 +1,6 @@
+{"event_id":"example:runtime:start","event_type":"runtime.started","source":"example-adapter/v1","runtime_id":"example:runtime","payload":{"runner_name":"example-agent","surface":"cli","cwd":"/example/project"}}
+{"event_id":"example:session","event_type":"session.identified","source":"example-adapter/v1","runtime_id":"example:runtime","session_id":"example:session","payload":{"runner_name":"example-agent","native_session_id":"example-native-conversation","title":"Try a tests-first workflow"}}
+{"event_id":"example:turn:start","event_type":"execution.started","source":"example-adapter/v1","runtime_id":"example:runtime","session_id":"example:session","execution_id":"example:turn","payload":{"capture_scope":"TURN","model":"UNKNOWN","prompt_summary":"Add a regression test before fixing the bug"}}
+{"event_id":"example:tool:1","event_type":"component.invoked","source":"example-adapter/v1","execution_id":"example:turn","payload":{"component_type":"TOOL","name":"test-runner","invocations_count":1}}
+{"event_id":"example:turn:end","event_type":"execution.completed","source":"example-adapter/v1","execution_id":"example:turn","payload":{"exit_code":0,"duration_ms":2500}}
+{"event_id":"example:runtime:end","event_type":"runtime.stopped","source":"example-adapter/v1","runtime_id":"example:runtime","payload":{"exit_code":0}}

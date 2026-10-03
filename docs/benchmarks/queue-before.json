@@ -1,0 +1,1 @@
+{"enqueue_10k_windows_seconds":[3.8780454,4.1985883,4.4288298,4.7518774,5.1013486,5.6466586,5.821298,6.083338,6.3591876,6.6919172],"enqueue_seconds":52.9612341,"events":100000,"profile":"debug; 100-event enqueue; 128-byte payload; one offline stream; restart then local delivery","recovery_seconds":40.1882699,"stored_events":100000}

@@ -1,5 +1,8 @@
-import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useRefreshInterval } from '../../shared/preferences';
+import { EventTimeline } from '../../features/EventTimeline';
+import { ExecutionReview } from '../../features/ExecutionReview';
+import React, { useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -12,7 +15,6 @@ import {
   Center,
   Button,
   Tabs,
-  Timeline,
   Code,
   Table,
   SimpleGrid,
@@ -36,11 +38,15 @@ import {
 export const ExecutionDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const backTo = typeof location.state?.from === "string" && location.state.from.startsWith("/executions?") ? location.state.from : "/executions";
+  const [activeTab,setActiveTab] = useState<string | null>('review');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['execution', id],
     queryFn: () => fetchExecutionDetail(id!),
     enabled: Boolean(id),
+    refetchInterval: useRefreshInterval(),
   });
 
   if (isLoading) {
@@ -56,7 +62,7 @@ export const ExecutionDetailPage: React.FC = () => {
       <Center style={{ height: '70vh' }}>
         <Stack align="center">
           <Text c="red" size="lg">Execution not found or failed to load.</Text>
-          <Button variant="outline" onClick={() => navigate('/executions')}>
+          <Button variant="outline" onClick={() => navigate(backTo)}>
             Back to Executions
           </Button>
         </Stack>
@@ -64,7 +70,7 @@ export const ExecutionDetailPage: React.FC = () => {
     );
   }
 
-  const { execution, runtime, session, agents, components, git_snapshots, events } = data;
+  const { execution, runtime, session, agents, components, git_snapshots, events_total } = data;
 
   const mcpComponents = components.filter((c) => c.component_type === 'MCP');
   const skillComponents = components.filter((c) => c.component_type === 'SKILL');
@@ -74,38 +80,34 @@ export const ExecutionDetailPage: React.FC = () => {
   const afterSnap = git_snapshots.find((s) => s.snapshot_type === 'AFTER');
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
+    <div className="panel-page">
       <Button
         variant="subtle"
         leftSection={<IconArrowLeft size={16} />}
-        onClick={() => navigate('/executions')}
+        onClick={() => navigate(backTo)}
         mb="md"
       >
         Back to Executions
       </Button>
 
       {/* Top Header Card */}
-      <Card withBorder radius="md" p="lg" mb="lg">
+      <Card withBorder radius="md" p="sm" mb="md">
         <Group justify="space-between" align="flex-start">
           <div>
             <Group gap="sm">
-              <Title order={3}>Execution: {execution.id}</Title>
+              <Title order={2}>{execution.prompt_summary || `${runtime?.runner_name ?? "Agent"} execution`}</Title>
               <StatusBadge status={execution.status} />
-              <AttributionBadge attribution={execution.git_attribution} />
+              {execution.git_attribution !== 'UNKNOWN' && <AttributionBadge attribution={execution.git_attribution} />}
+              <Badge variant="outline">{execution.capture_scope} observation</Badge>
             </Group>
             <Text c="dimmed" size="sm" mt={4}>
               Started: {dayjs(execution.started_at).format('YYYY-MM-DD HH:mm:ss')}
             </Text>
-            {execution.prompt_summary && (
-              <Text size="sm" mt="xs" fw={500}>
-                Prompt: "{execution.prompt_summary}"
-              </Text>
-            )}
           </div>
 
           <Group gap="xs">
             <Badge size="lg" variant="light" color="blue" leftSection={<IconClock size={14} />}>
-              Duration: {execution.duration_ms ? `${(execution.duration_ms / 1000).toFixed(1)}s` : 'In progress'}
+              Duration: {execution.duration_ms !== null ? `${(execution.duration_ms / 1000).toFixed(1)}s` : execution.status === 'RUNNING' ? 'Awaiting completion' : 'Unknown'}
             </Badge>
             {execution.exit_code !== null && (
               <Badge size="lg" variant="outline" color={execution.exit_code === 0 ? 'green' : 'red'}>
@@ -123,7 +125,8 @@ export const ExecutionDetailPage: React.FC = () => {
           </Box>
         )}
 
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md" mt="lg">
+        <details className="compact-details"><summary>Execution ID · …{execution.id.slice(-12)}</summary><Code block>{execution.id}</Code></details>
+        <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm" mt="sm">
           <div>
             <Text size="xs" c="dimmed">Model & Reasoning</Text>
             <Group gap={6} mt={2}>
@@ -179,25 +182,40 @@ export const ExecutionDetailPage: React.FC = () => {
       </Card>
 
       {/* Tabs Section */}
-      <Tabs defaultValue="components">
-        <Tabs.List mb="md">
+      {runtime?.surface === 'transcript' && <Text size="xs" c="dimmed" mb="sm">Native transcript · turn boundaries from the rollout · process liveness unknown</Text>}
+      {data.usage && <Card withBorder mb="md">
+        <details className="compact-details"><summary>Token usage · {data.usage.total_tokens.toLocaleString()} total · {data.usage.input_tokens.toLocaleString()} in / {data.usage.output_tokens.toLocaleString()} out</summary>
+        <SimpleGrid cols={{base:2,md:5}}>
+          {[
+            ['Input', data.usage.input_tokens], ['Cached input', data.usage.cached_input_tokens],
+            ['Output', data.usage.output_tokens], ['Reasoning output', data.usage.reasoning_output_tokens],
+            ['Total', data.usage.total_tokens],
+          ].map(([label,value]) => <div key={label}><Text size="xs" c="dimmed">{label}</Text><Text fw={600}>{Number(value).toLocaleString()}</Text></div>)}
+        </SimpleGrid>
+        <Text size="xs" c="dimmed" mt="sm">Observed counters may be incomplete. Cached input is part of input; reasoning output is part of output. These numbers are not a cost estimate.</Text></details>
+      </Card>}
+      <Tabs value={activeTab} onChange={setActiveTab} keepMounted>
+
+        <Tabs.List mb="sm">
+          <Tabs.Tab value="review">Review</Tabs.Tab>
           <Tabs.Tab value="components" leftSection={<IconServer size={16} />}>
-            Components (MCP, Skills, Plugins) ({components.length})
+            Components ({components.length})
           </Tabs.Tab>
           <Tabs.Tab value="git" leftSection={<IconFileDiff size={16} />}>
-            Git Context & Changes ({git_snapshots.length})
+            Git ({git_snapshots.length})
           </Tabs.Tab>
           <Tabs.Tab value="agents" leftSection={<IconRobot size={16} />}>
-            Agents & Subagents ({agents.length})
+            Agents ({agents.length})
           </Tabs.Tab>
           <Tabs.Tab value="events" leftSection={<IconListDetails size={16} />}>
-            Event Timeline ({events.length})
+            Events ({events_total.toLocaleString()})
           </Tabs.Tab>
         </Tabs.List>
 
+        <Tabs.Panel value="review"><ExecutionReview key={execution.id} id={execution.id} /></Tabs.Panel>
         {/* 1. Components Tab */}
         <Tabs.Panel value="components">
-          <SimpleGrid cols={{ base: 1, md: 3 }} spacing="lg">
+          <SimpleGrid cols={{ base: 1, md: 3 }} spacing="sm">
             {/* MCP Servers */}
             <Card withBorder radius="md" p="md">
               <Title order={5} mb="sm">
@@ -276,7 +294,7 @@ export const ExecutionDetailPage: React.FC = () => {
 
         {/* 2. Git Context Tab */}
         <Tabs.Panel value="git">
-          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
             {/* Before Snapshot */}
             <Card withBorder radius="md" p="md">
               <Group justify="space-between" mb="xs">
@@ -352,7 +370,7 @@ export const ExecutionDetailPage: React.FC = () => {
             {agents.length === 0 ? (
               <Text size="sm" c="dimmed">No agent instances recorded.</Text>
             ) : (
-              <Table>
+              <Table.ScrollContainer minWidth={650}><Table>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Name</Table.Th>
@@ -377,46 +395,14 @@ export const ExecutionDetailPage: React.FC = () => {
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
-              </Table>
+              </Table></Table.ScrollContainer>
             )}
           </Card>
         </Tabs.Panel>
 
         {/* 4. Events Timeline Tab */}
         <Tabs.Panel value="events">
-          <Card withBorder radius="md" p="md">
-            <Title order={5} mb="md">Event Timeline</Title>
-            {events.length === 0 ? (
-              <Text size="sm" c="dimmed">No timeline events recorded.</Text>
-            ) : (
-              <Timeline active={events.length - 1} bulletSize={22} lineWidth={2}>
-                {events.map((ev, index) => (
-                  <Timeline.Item
-                    key={ev.id || index}
-                    title={
-                      <Group gap="xs">
-                        <Text size="sm" fw={600}>
-                          {ev.event_type}
-                        </Text>
-                        <Badge size="xs" variant="outline" color="gray">
-                          {ev.source}
-                        </Badge>
-                      </Group>
-                    }
-                  >
-                    <Text c="dimmed" size="xs">
-                      {dayjs(ev.timestamp).format('YYYY-MM-DD HH:mm:ss.SSS')}
-                    </Text>
-                    {ev.payload_json && ev.payload_json !== '{}' && (
-                      <Code block mt={4} style={{ fontSize: '11px', maxHeight: '180px', overflowY: 'auto' }}>
-                        {ev.payload_json}
-                      </Code>
-                    )}
-                  </Timeline.Item>
-                ))}
-              </Timeline>
-            )}
-          </Card>
+          <EventTimeline key={execution.id} id={execution.id} enabled={activeTab === "events"} />
         </Tabs.Panel>
       </Tabs>
     </div>

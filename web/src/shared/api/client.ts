@@ -14,6 +14,7 @@ export interface ExecutionFilterParams {
   page?: number;
   page_size?: number;
   period?: string;
+  scope?: string;
   runner?: string;
   model?: string;
   agent?: string;

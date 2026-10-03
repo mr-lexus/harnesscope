@@ -1,123 +1,38 @@
-import React from 'react';
-import { Group, Title, Button, Badge, Anchor, Box } from '@mantine/core';
+import { ActionIcon, Badge, Button, Group, Menu, Text, Tooltip } from '@mantine/core';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { NavLink } from 'react-router-dom';
+import { IconAdjustments, IconLayoutRows, IconPlayerPause, IconPlayerPlay, IconRefresh, IconTelescope } from '@tabler/icons-react';
+import { fetchCollection, collectionLabel } from '../shared/api/sources';
 import { fetchHealth, seedDemoData } from '../shared/api/client';
-import { IconDatabase, IconActivity, IconPlayerPlay } from '@tabler/icons-react';
-
-export const Header: React.FC = () => {
-  const queryClient = useQueryClient();
-  const { data: health } = useQuery({
-    queryKey: ['health'],
-    queryFn: fetchHealth,
-    refetchInterval: 5000,
-  });
-
-  const seedMutation = useMutation({
-    mutationFn: seedDemoData,
-    onSuccess: () => {
-      queryClient.invalidateQueries();
-    },
-  });
-
-  return (
-    <Box
-      style={{
-        borderBottom: '1px solid var(--mantine-color-default-border)',
-        padding: '12px 24px',
-        backgroundColor: 'var(--mantine-color-body)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-      }}
-    >
-      <Group justify="space-between" align="center">
-        <Group gap="lg">
-          <Group gap="xs" style={{ cursor: 'pointer' }}>
-            <span style={{ fontSize: '26px' }}>🔭</span>
-            <div>
-              <Title order={3} style={{ lineHeight: 1.1 }}>
-                Harnesscope
-              </Title>
-              <Group gap={6} mt={2}>
-                <Badge size="xs" variant="outline" color="blue">
-                  v0.2.0
-                </Badge>
-                <Badge size="xs" variant="dot" color={health?.db_connected ? 'green' : 'red'}>
-                  {health?.db_connected ? 'SQLite WAL' : 'Offline'}
-                </Badge>
-              </Group>
-            </div>
-          </Group>
-
-          <Group gap="xs" ml="md">
-            <Button
-              component={NavLink}
-              to="/executions"
-              variant="subtle"
-              size="sm"
-              styles={{
-                root: {
-                  fontWeight: 600,
-                },
-              }}
-            >
-              Executions
-            </Button>
-            <Button
-              component={NavLink}
-              to="/sessions"
-              variant="subtle"
-              size="sm"
-              styles={{
-                root: {
-                  fontWeight: 600,
-                },
-              }}
-            >
-              Sessions
-            </Button>
-            <Button
-              component={NavLink}
-              to="/stats"
-              variant="subtle"
-              size="sm"
-              styles={{
-                root: {
-                  fontWeight: 600,
-                },
-              }}
-            >
-              Stats
-            </Button>
-          </Group>
-        </Group>
-
-        <Group gap="sm">
-          {health && (
-            <Group gap="xs" visibleFrom="sm">
-              <Badge variant="light" color="indigo" size="sm" leftSection={<IconActivity size={12} />}>
-                Active: {health.active_executions} execs, {health.active_runtimes} runs
-              </Badge>
-              <Badge variant="light" color="gray" size="sm" leftSection={<IconDatabase size={12} />}>
-                Total: {health.total_executions} execs
-              </Badge>
-            </Group>
-          )}
-
-          <Button
-            size="xs"
-            variant="outline"
-            color="teal"
-            leftSection={<IconPlayerPlay size={14} />}
-            loading={seedMutation.isPending}
-            onClick={() => seedMutation.mutate()}
-            title="Seed deterministic demo data into SQLite"
-          >
-            Seed Demo Data
-          </Button>
-        </Group>
-      </Group>
-    </Box>
-  );
-};
+import { usePreferences, useRefreshInterval, toggleDensity, toggleLive } from '../shared/preferences';
+export function Header() {
+  const client = useQueryClient();
+  const { compact, live } = usePreferences();
+  const health = useQuery({queryKey:['health'],queryFn:fetchHealth,refetchInterval:useRefreshInterval()});
+  const collection = useQuery({queryKey:['collection'],queryFn:fetchCollection,refetchInterval:useRefreshInterval()});
+  const state = collection.data?.status;
+  const stateLabel = state ? collectionLabel[state] : 'Checking collection';
+  const needsAttention = collection.isError || state === 'NEEDS_ATTENTION' || state === 'OVERDUE';
+  const seed = useMutation({mutationFn:seedDemoData,onSuccess:()=>client.invalidateQueries()});
+  return <header className="app-header">
+    <a className="skip-link" href="#main">Skip to content</a>
+    <NavLink to="/" className="brand"><IconTelescope size={22}/><span>Harnesscope</span></NavLink>
+    <nav className="primary-nav" aria-label="Main navigation">
+      {[['/','Overview'],['/executions','Executions'],['/sessions','Sessions'],['/monitoring','Monitor'],['/sources','Sources'],['/stats','Stats']].map(([to,label]) =>
+        <NavLink key={to} to={to} end={to==='/'}>{label}</NavLink>)}
+    </nav>
+    <Group className="header-tools" gap={6} wrap="nowrap">
+      <Tooltip label={health.isError ? 'Server offline. Start Harnesscope to resume collection.' : stateLabel}><NavLink to="/sources" aria-label={stateLabel} style={{textDecoration:'none'}}><Badge variant="dot" size="sm" color={health.isError || needsAttention ? 'red' : state === 'COLLECTING' ? 'teal' : 'orange'}>{health.isError ? 'Offline' : needsAttention ? 'Check' : state === 'COLLECTING' ? 'Active' : state === 'CATCHING_UP' ? 'Backlog' : state === 'PAUSED' ? 'Paused' : state === 'STARTING' ? 'Starting' : 'Setup'}</Badge></NavLink></Tooltip>
+      <Tooltip label={live ? 'Pause automatic refresh' : 'Resume automatic refresh'}><ActionIcon variant="subtle" aria-label={live ? 'Pause automatic refresh' : 'Resume automatic refresh'} onClick={toggleLive} color={live ? 'gray':'orange'}>{live ? <IconPlayerPause size={17}/> : <IconPlayerPlay size={17}/>}</ActionIcon></Tooltip>
+      <Menu position="bottom-end" withinPortal><Menu.Target><ActionIcon variant="default" aria-label="Panel settings"><IconAdjustments size={17}/></ActionIcon></Menu.Target><Menu.Dropdown>
+        <Menu.Label>Panel · {health.data?.version ?? 'local'}</Menu.Label>
+        <Menu.Item leftSection={<IconLayoutRows size={16}/>} onClick={toggleDensity}>{compact ? 'Use comfortable density' : 'Use compact density'}</Menu.Item>
+        <Menu.Item leftSection={<IconRefresh size={16}/>} onClick={()=>client.invalidateQueries()}>Refresh all data</Menu.Item>
+        <Menu.Divider/><Menu.Item disabled={seed.isPending} onClick={()=>seed.mutate()}>Load demo data</Menu.Item>
+      </Menu.Dropdown></Menu>
+    </Group>
+    {!live && <Text className="header-notice" size="xs" c="orange" role="status">Auto-refresh paused. Collection continues. <Button variant="subtle" size="compact-xs" onClick={toggleLive}>Resume</Button></Text>}
+    {seed.isError && <Text className="header-notice" size="xs" c="red" role="alert">{seed.error.message}</Text>}
+    {seed.isSuccess && <Text className="header-notice" size="xs" c="teal" role="status">Demo data loaded. Enable “Include demo” in Overview to see it.</Text>}
+  </header>;
+}

@@ -1,201 +1,39 @@
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import {
-  Table,
-  Card,
-  Title,
-  Text,
-  Group,
-  Pagination,
-  Badge,
-  Loader,
-  Center,
-  Code,
-  Tooltip,
-} from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Alert, Badge, Button, Card, Group, Loader, Pagination, Select, Table, Text, Title } from '@mantine/core';
 import dayjs from 'dayjs';
 import { fetchExecutions, ExecutionFilterParams } from '../../shared/api/client';
-import { StatusBadge, AttributionBadge, UnknownText } from '../../shared/ui/Badges';
+import { StatusBadge, AttributionBadge } from '../../shared/ui/Badges';
 import { ExecutionFilters } from '../../features/ExecutionFilters';
-import { IconCpu, IconGitBranch, IconFolder } from '@tabler/icons-react';
-
-export const ExecutionsPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [filters, setFilters] = useState<ExecutionFilterParams>({
-    page: 1,
-    page_size: 15,
-  });
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['executions', filters],
-    queryFn: () => fetchExecutions(filters),
-    refetchInterval: 5000,
-  });
-
-  const formatDuration = (ms: number | null) => {
-    if (ms === null || ms === undefined) return <UnknownText value={null} />;
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remSec = seconds % 60;
-    return `${minutes}m ${remSec}s`;
-  };
-
-  return (
-    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
-      <Group justify="space-between" mb="lg">
-        <div>
-          <Title order={2}>Agent Executions</Title>
-          <Text c="dimmed" size="sm">
-            Deterministic turn-level telemetry from wrapped AI coding agents.
-          </Text>
-        </div>
-        {data && (
-          <Badge size="lg" variant="light" color="blue">
-            Total: {data.total} executions
-          </Badge>
-        )}
-      </Group>
-
-      <ExecutionFilters
-        filters={filters}
-        onChange={setFilters}
-        onReset={() => setFilters({ page: 1, page_size: 15 })}
-      />
-
-      <Card withBorder radius="md" p={0} style={{ overflow: 'hidden' }}>
-        {isLoading ? (
-          <Center p="xl">
-            <Loader size="lg" />
-          </Center>
-        ) : error ? (
-          <Center p="xl">
-            <Text c="red">Error loading executions: {(error as Error).message}</Text>
-          </Center>
-        ) : !data || data.items.length === 0 ? (
-          <Center p="xl">
-            <Text c="dimmed">No executions found matching your filters.</Text>
-          </Center>
-        ) : (
-          <Table.ScrollContainer minWidth={1000}>
-            <Table highlightOnHover verticalSpacing="sm">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Time</Table.Th>
-                  <Table.Th>Runner</Table.Th>
-                  <Table.Th>Model</Table.Th>
-                  <Table.Th>Reasoning</Table.Th>
-                  <Table.Th>Agent / Role</Table.Th>
-                  <Table.Th>Session</Table.Th>
-                  <Table.Th>Repo / Branch</Table.Th>
-                  <Table.Th>Worktree & Attribution</Table.Th>
-                  <Table.Th>Duration</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {data.items.map((exec) => (
-                  <Table.Tr
-                    key={exec.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/executions/${exec.id}`)}
-                  >
-                    <Table.Td>
-                      <Tooltip label={exec.started_at}>
-                        <Text size="xs" fw={500}>
-                          {dayjs(exec.started_at).format('YYYY-MM-DD HH:mm:ss')}
-                        </Text>
-                      </Tooltip>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <Badge variant="outline" color="cyan" size="sm">
-                        {exec.runtime_id.startsWith('run_') && exec.native_execution_id ? 'CLI' : 'UNKNOWN'}
-                      </Badge>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <Group gap={4}>
-                        <IconCpu size={14} color="gray" />
-                        <UnknownText value={exec.model} />
-                      </Group>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <UnknownText value={exec.reasoning_effort} />
-                    </Table.Td>
-
-                    <Table.Td>
-                      <Badge color="violet" variant="light" size="sm">
-                        {exec.selected_agent_role || 'main'}
-                      </Badge>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <Code style={{ fontSize: '11px' }}>
-                        {exec.native_execution_id !== 'UNKNOWN'
-                          ? exec.native_execution_id
-                          : exec.session_id.substring(0, 14)}
-                      </Code>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <div>
-                        <Text size="xs" fw={500} lineClamp={1}>
-                          {exec.repo_root ? exec.repo_root.split('/').pop()?.split('\\').pop() : 'UNKNOWN'}
-                        </Text>
-                        {exec.branch && (
-                          <Group gap={4} mt={2}>
-                            <IconGitBranch size={12} color="gray" />
-                            <Text size="xs" c="dimmed">
-                              {exec.branch}
-                            </Text>
-                          </Group>
-                        )}
-                      </div>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <div>
-                        {exec.worktree_path ? (
-                          <Group gap={4}>
-                            <IconFolder size={12} color="gray" />
-                            <Text size="xs" lineClamp={1}>
-                              {exec.worktree_path.split('/').pop()?.split('\\').pop()}
-                            </Text>
-                          </Group>
-                        ) : (
-                          <UnknownText value={null} />
-                        )}
-                        <AttributionBadge attribution={exec.git_attribution} />
-                      </div>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <Text size="xs">{formatDuration(exec.duration_ms)}</Text>
-                    </Table.Td>
-
-                    <Table.Td>
-                      <StatusBadge status={exec.status} />
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        )}
-
-        {data && data.total_pages > 1 && (
-          <Group justify="center" p="md" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
-            <Pagination
-              total={data.total_pages}
-              value={filters.page || 1}
-              onChange={(page) => setFilters({ ...filters, page })}
-            />
-          </Group>
-        )}
-      </Card>
-    </div>
-  );
-};
+import { useRefreshInterval } from '../../shared/preferences';
+const duration = (ms: number | null) => ms == null ? '—' : ms < 60000 ? `${(ms/1000).toFixed(1)}s` : `${(ms/60000).toFixed(1)}m`;
+const leaf = (s: string | null) => s?.split(/[\\/]/).pop() || 'Unknown project';
+export function ExecutionsPage() {
+  const [params,setParams] = useSearchParams();
+  const location = useLocation();
+  const filters: ExecutionFilterParams = Object.fromEntries(params);
+  filters.page = Math.max(1,Number(params.get('page')) || 1);
+  filters.page_size = [15,30,50].includes(Number(params.get('page_size'))) ? Number(params.get('page_size')) : 15;
+  const setFilters = (value:ExecutionFilterParams) => { const p = new URLSearchParams(); Object.entries(value).forEach(([k,v])=>{if(v!==undefined && v!=='' && v!=='ALL') p.set(k,String(v));}); setParams(p,{replace:true}); };
+  const query = useQuery({queryKey:['executions',filters],queryFn:()=>fetchExecutions(filters),refetchInterval:useRefreshInterval(),placeholderData:keepPreviousData});
+  const data = query.data;
+  const linkState = {from:location.pathname+location.search};
+  return <div className="panel-page">
+    <div className="page-heading"><div><Title order={2}>Executions <Text component="span" size="sm" c="dimmed">{data?.total ?? '…'}</Text></Title><Text size="sm" c="dimmed">Process observations and native turns. Open a record to review its outcome.</Text></div><Button variant="default" size="xs" onClick={()=>query.refetch()} loading={query.isFetching}>Refresh</Button></div>
+    <ExecutionFilters filters={filters} onChange={setFilters} onReset={()=>setFilters({page:1,page_size:filters.page_size})}/>
+    {query.error && <Alert color="red" mb="sm">{query.error.message}</Alert>}
+    <Card withBorder p={0} className="records-shell" aria-busy={query.isFetching}>
+      {query.isLoading ? <Loader m="md" aria-label="Loading executions"/> : !data?.items.length ? <Text p="lg" c="dimmed">No executions match these filters. Widen the period or reset filters.</Text> : <>
+        <div className="desktop-records"><Table.ScrollContainer minWidth={780}><Table highlightOnHover><Table.Thead><Table.Tr>{['Execution / model','Scope','Project / branch','Conversation','Duration','Status'].map(h=><Table.Th key={h}>{h}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>
+          {data.items.map(e=><Table.Tr key={e.id}><Table.Td><Link className="record-title" to={`/executions/${encodeURIComponent(e.id)}`} state={linkState}>{e.prompt_summary || e.model || 'Unknown model'}</Link><Text size="xs" c="dimmed">{dayjs(e.started_at).format('MMM D, HH:mm:ss')} · {e.reasoning_effort === 'UNKNOWN' ? 'Effort unknown' : e.reasoning_effort}{e.prompt_summary && ` · ${e.model}`}</Text></Table.Td>
+            <Table.Td><Badge size="xs" variant="outline" color="cyan">{e.capture_scope}</Badge></Table.Td>
+            <Table.Td><Text size="xs" title={e.repo_root || undefined}>{leaf(e.repo_root)}</Text><Text size="xs" c="dimmed" lineClamp={1} maw={180} title={e.branch || undefined}>{e.branch || 'No branch'}</Text>{e.git_attribution==='AMBIGUOUS' && <AttributionBadge attribution={e.git_attribution}/>}</Table.Td>
+            <Table.Td><Link className="record-title" to={`/sessions/${encodeURIComponent(e.session_id)}`} title={e.session_id}>…{e.session_id.slice(-10)}</Link>{e.native_execution_id!=='UNKNOWN' && <Text size="xs" c="dimmed" maw={140} truncate title={e.native_execution_id}>{e.native_execution_id}</Text>}</Table.Td>
+            <Table.Td>{duration(e.duration_ms)}</Table.Td><Table.Td><StatusBadge status={e.status}/></Table.Td></Table.Tr>)}
+        </Table.Tbody></Table></Table.ScrollContainer></div>
+        <div className="mobile-records">{data.items.map(e=><article key={e.id} className="record-card"><Group justify="space-between" mb={4}><Text size="xs" c="dimmed">{dayjs(e.started_at).format('MMM D, HH:mm')} · {duration(e.duration_ms)}</Text><StatusBadge status={e.status}/></Group><Link className="record-title" to={`/executions/${encodeURIComponent(e.id)}`} state={linkState}>{e.prompt_summary || e.model || 'Unknown model'}</Link><Group gap={6} mt={6}><Badge size="xs" variant="outline">{e.capture_scope}</Badge><Text size="xs" c="dimmed" lineClamp={1}>{leaf(e.repo_root)}{e.branch && ` · ${e.branch}`}</Text></Group></article>)}</div>
+      </>}
+    </Card>
+    {data && <Group justify="space-between" mt="sm"><Group gap="xs"><Text size="xs" c="dimmed">{data.total ? `${(data.page-1)*data.page_size+1}–${Math.min(data.page*data.page_size,data.total)} of ${data.total}` : '0 records'}</Text><Select aria-label="Rows per page" size="xs" w={85} allowDeselect={false} data={['15','30','50']} value={String(filters.page_size)} onChange={v=>setFilters({...filters,page_size:Number(v),page:1})}/></Group>{data.total_pages>1 && <Pagination size="sm" siblings={0} total={data.total_pages} value={filters.page} onChange={page=>setFilters({...filters,page})}/>}</Group>}
+  </div>;
+}

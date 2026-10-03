@@ -1,112 +1,20 @@
-import React from 'react';
-import { Card, Group, Select, TextInput, Button, SimpleGrid } from '@mantine/core';
+import { useState } from 'react';
+import { Button, Card, Collapse, Group, Select, TextInput } from '@mantine/core';
 import { ExecutionFilterParams } from '../shared/api/client';
-import { IconFilter, IconRotateClockwise } from '@tabler/icons-react';
-
-interface Props {
-  filters: ExecutionFilterParams;
-  onChange: (updated: ExecutionFilterParams) => void;
-  onReset: () => void;
+interface Props { filters: ExecutionFilterParams; onChange: (updated: ExecutionFilterParams) => void; onReset: () => void }
+export function ExecutionFilters({filters,onChange,onReset}: Props) {
+  const advanced = ['runner','agent','branch','session','component'] as const;
+  const count = advanced.filter(k=>filters[k] && filters[k]!=='ALL').length;
+  const [open,setOpen] = useState(count>0);
+  const change = (key: keyof ExecutionFilterParams, value: string | null) => onChange({...filters,[key]:value || undefined,page:1});
+  return <Card withBorder p="sm" mb="sm">
+    <div className="filter-grid">
+      <Select size="xs" label="Period" allowDeselect={false} value={filters.period || 'all'} data={[{value:'all',label:'All time'},{value:'1h',label:'Last hour'},{value:'24h',label:'Last 24 hours'},{value:'7d',label:'Last 7 days'},{value:'30d',label:'Last 30 days'}]} onChange={v=>change('period',v)}/>
+      <Select size="xs" label="Scope" allowDeselect={false} value={filters.scope || 'ALL'} data={[{value:'ALL',label:'All scopes'},'PROCESS','TURN','UNKNOWN','DEMO']} onChange={v=>change('scope',v)}/>
+      <Select size="xs" label="Status" allowDeselect={false} value={filters.status || 'ALL'} data={[{value:'ALL',label:'All statuses'},'RUNNING','COMPLETED','FAILED','CANCELLED','UNKNOWN']} onChange={v=>change('status',v)}/>
+      <TextInput size="xs" label="Model" placeholder="Any model" value={filters.model || ''} onChange={e=>change('model',e.currentTarget.value)}/>
+    </div>
+    <Group justify="space-between" mt={6}><Button size="compact-xs" variant="subtle" onClick={()=>setOpen(!open)} aria-expanded={open} aria-controls="advanced-filters">{open ? 'Hide':'More'} filters{count ? ` (${count} active)` : ''}</Button><Button size="compact-xs" variant="subtle" color="gray" onClick={onReset}>Reset</Button></Group>
+    <Collapse in={open} id="advanced-filters"><div className="filter-grid" style={{marginTop:8}}>{advanced.map(k=><TextInput key={k} size="xs" label={{runner:'Runner (exact name)',agent:'Agent / role',branch:'Branch',session:'Session ID',component:'Component'}[k]} value={filters[k] === 'ALL' ? '' : filters[k] || ''} onChange={e=>change(k,e.currentTarget.value)}/>)}</div></Collapse>
+  </Card>;
 }
-
-export const ExecutionFilters: React.FC<Props> = ({ filters, onChange, onReset }) => {
-  return (
-    <Card withBorder p="md" radius="md" mb="md">
-      <Group justify="space-between" mb="xs">
-        <Group gap="xs">
-          <IconFilter size={18} />
-          <strong>Filters</strong>
-        </Group>
-        <Button variant="subtle" color="gray" size="xs" leftSection={<IconRotateClockwise size={14} />} onClick={onReset}>
-          Reset Filters
-        </Button>
-      </Group>
-
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="sm">
-        <Select
-          label="Period"
-          placeholder="All time"
-          data={[
-            { value: 'all', label: 'All time' },
-            { value: '1h', label: 'Last 1 hour' },
-            { value: '24h', label: 'Last 24 hours' },
-            { value: '7d', label: 'Last 7 days' },
-            { value: '30d', label: 'Last 30 days' },
-          ]}
-          value={filters.period || 'all'}
-          onChange={(val) => onChange({ ...filters, period: val || 'all', page: 1 })}
-          size="xs"
-        />
-
-        <Select
-          label="Runner"
-          placeholder="All runners"
-          data={[
-            { value: 'ALL', label: 'All runners' },
-            { value: 'codex', label: 'Codex' },
-            { value: 'copilot', label: 'GitHub Copilot' },
-            { value: 'opencode', label: 'OpenCode' },
-          ]}
-          value={filters.runner || 'ALL'}
-          onChange={(val) => onChange({ ...filters, runner: val || 'ALL', page: 1 })}
-          size="xs"
-        />
-
-        <Select
-          label="Status"
-          placeholder="All statuses"
-          data={[
-            { value: 'ALL', label: 'All statuses' },
-            { value: 'COMPLETED', label: 'COMPLETED' },
-            { value: 'RUNNING', label: 'RUNNING' },
-            { value: 'FAILED', label: 'FAILED' },
-            { value: 'CANCELLED', label: 'CANCELLED' },
-          ]}
-          value={filters.status || 'ALL'}
-          onChange={(val) => onChange({ ...filters, status: val || 'ALL', page: 1 })}
-          size="xs"
-        />
-
-        <TextInput
-          label="Model"
-          placeholder="e.g. gpt-4o, claude"
-          value={filters.model || ''}
-          onChange={(e) => onChange({ ...filters, model: e.currentTarget.value, page: 1 })}
-          size="xs"
-        />
-
-        <TextInput
-          label="Agent / Role"
-          placeholder="e.g. coder, architect"
-          value={filters.agent || ''}
-          onChange={(e) => onChange({ ...filters, agent: e.currentTarget.value, page: 1 })}
-          size="xs"
-        />
-
-        <TextInput
-          label="Branch"
-          placeholder="e.g. main, feature/auth"
-          value={filters.branch || ''}
-          onChange={(e) => onChange({ ...filters, branch: e.currentTarget.value, page: 1 })}
-          size="xs"
-        />
-
-        <TextInput
-          label="Session ID"
-          placeholder="Native or session ID"
-          value={filters.session || ''}
-          onChange={(e) => onChange({ ...filters, session: e.currentTarget.value, page: 1 })}
-          size="xs"
-        />
-
-        <TextInput
-          label="Component (MCP / Skill / Plugin)"
-          placeholder="e.g. filesystem, git"
-          value={filters.component || ''}
-          onChange={(e) => onChange({ ...filters, component: e.currentTarget.value, page: 1 })}
-          size="xs"
-        />
-      </SimpleGrid>
-    </Card>
-  );
-};

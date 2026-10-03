@@ -84,9 +84,15 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
         };
 
         let app_candidates = vec![
-            format!("/Applications/{}.app/Contents/MacOS/{}", capitalized, capitalized),
+            format!(
+                "/Applications/{}.app/Contents/MacOS/{}",
+                capitalized, capitalized
+            ),
             format!("/Applications/{}.app/Contents/MacOS/{}", name, name),
-            format!("{}/Applications/{}.app/Contents/MacOS/{}", home, capitalized, capitalized),
+            format!(
+                "{}/Applications/{}.app/Contents/MacOS/{}",
+                home, capitalized, capitalized
+            ),
             format!("{}/Applications/{}.app/Contents/MacOS/{}", home, name, name),
         ];
 
@@ -102,16 +108,20 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
 }
 
 pub fn discover_runner_binary(runner_name: &str) -> Option<PathBuf> {
-    let env_var_name = match runner_name {
-        "codex" => "HARNESSCOPE_CODEX_BIN",
-        "copilot" => "HARNESSCOPE_COPILOT_BIN",
-        "opencode" => "HARNESSCOPE_OPENCODE_BIN",
-        _ => return None,
-    };
+    if !runner_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return None;
+    }
+    let env_var_name = format!(
+        "HARNESSCOPE_{}_BIN",
+        runner_name.to_ascii_uppercase().replace('-', "_")
+    );
 
-    if let Ok(custom_path) = std::env::var(env_var_name) {
+    if let Ok(custom_path) = std::env::var(&env_var_name) {
         let p = PathBuf::from(custom_path);
-        if p.is_file() {
+        if is_file_executable(&p) {
             return Some(p);
         }
     }
@@ -121,7 +131,7 @@ pub fn discover_runner_binary(runner_name: &str) -> Option<PathBuf> {
         "codex" => &["codex"],
         "copilot" => &["copilot", "github-copilot-cli"],
         "opencode" => &["opencode"],
-        _ => &[],
+        _ => &[runner_name],
     };
 
     for name in search_names {

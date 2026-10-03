@@ -6,6 +6,15 @@ use crate::domain::models::*;
 use crate::storage::Repository;
 
 pub fn seed_demo_data(repo: &Repository) -> Result<String> {
+    repo.transaction(|| {
+        if repo.find_session_by_id("sess_codex_demo_01")?.is_some() {
+            return Ok("Demo data already exists; no records changed".into());
+        }
+        seed_demo_inner(repo)
+    })
+}
+
+fn seed_demo_inner(repo: &Repository) -> Result<String> {
     let base_time = Utc::now() - Duration::hours(2);
 
     // 1. Session 1: Codex CLI with RESUME across runtime restart!
@@ -54,7 +63,8 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         hostname: "dev-workstation".to_string(),
         os: std::env::consts::OS.to_string(),
         cwd: "C:/projects/auth-service".to_string(),
-        command_line: "codex --model gpt-4o --reasoning-effort high --session codex-thread-8841".to_string(),
+        command_line: "codex --model gpt-4o --reasoning-effort high --session codex-thread-8841"
+            .to_string(),
         started_at: (base_time).to_rfc3339(),
         ended_at: Some((base_time + Duration::minutes(25)).to_rfc3339()),
         exit_code: Some(0),
@@ -95,6 +105,7 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         branch: Some("feature/jwt-auth".to_string()),
         head_sha: Some("d3a84b29c112".to_string()),
         git_attribution: "OBSERVED".to_string(),
+        capture_scope: "DEMO".to_string(),
     };
     repo.save_execution(&exec1)?;
 
@@ -121,6 +132,7 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         branch: Some("feature/jwt-auth".to_string()),
         head_sha: Some("9f110c4d5e21".to_string()),
         git_attribution: "OBSERVED".to_string(),
+        capture_scope: "DEMO".to_string(),
     };
     repo.save_execution(&exec2)?;
 
@@ -176,6 +188,7 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         branch: Some("feature/jwt-auth".to_string()),
         head_sha: Some("3e82bb71aa90".to_string()),
         git_attribution: "OBSERVED".to_string(),
+        capture_scope: "DEMO".to_string(),
     };
     repo.save_execution(&exec3)?;
 
@@ -251,6 +264,7 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         branch: Some("main".to_string()),
         head_sha: Some("7c83f12401ba".to_string()),
         git_attribution: "AMBIGUOUS".to_string(), // parallel in same worktree!
+        capture_scope: "DEMO".to_string(),
     };
     repo.save_execution(&exec4)?;
 
@@ -321,6 +335,7 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         branch: Some("main".to_string()),
         head_sha: Some("7c83f12401ba".to_string()),
         git_attribution: "AMBIGUOUS".to_string(), // parallel in same worktree!
+        capture_scope: "DEMO".to_string(),
     };
     repo.save_execution(&exec5)?;
 
@@ -406,6 +421,7 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         branch: None,
         head_sha: None,
         git_attribution: "UNKNOWN".to_string(),
+        capture_scope: "DEMO".to_string(),
     };
     repo.save_execution(&exec6)?;
 
@@ -462,7 +478,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         state: "INVOKED".to_string(),
         invocations_count: 4,
         details_json: Some(r#"{"read_files": 3, "write_files": 1}"#.to_string()),
-        component_type: None, component_name: None, component_version: None,
+        component_type: None,
+        component_name: None,
+        component_version: None,
     })?;
     repo.save_execution_component(&ExecutionComponent {
         execution_id: exec1_id.clone(),
@@ -470,7 +488,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         state: "INVOKED".to_string(),
         invocations_count: 2,
         details_json: Some(r#"{"status_check": true}"#.to_string()),
-        component_type: None, component_name: None, component_version: None,
+        component_type: None,
+        component_name: None,
+        component_version: None,
     })?;
     repo.save_execution_component(&ExecutionComponent {
         execution_id: exec1_id.clone(),
@@ -478,7 +498,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         state: "CONFIGURED".to_string(),
         invocations_count: 0,
         details_json: None,
-        component_type: None, component_name: None, component_version: None,
+        component_type: None,
+        component_name: None,
+        component_version: None,
     })?;
 
     // Execution 4 (OpenCode) components:
@@ -488,7 +510,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         state: "LOADED".to_string(),
         invocations_count: 0,
         details_json: None,
-        component_type: None, component_name: None, component_version: None,
+        component_type: None,
+        component_name: None,
+        component_version: None,
     })?;
     repo.save_execution_component(&ExecutionComponent {
         execution_id: exec4_id.clone(),
@@ -496,7 +520,9 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         state: "INVOKED".to_string(),
         invocations_count: 1,
         details_json: None,
-        component_type: None, component_name: None, component_version: None,
+        component_type: None,
+        component_name: None,
+        component_version: None,
     })?;
 
     // Subagent instances for Execution 1
@@ -543,11 +569,14 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
         is_dirty: true,
         changed_files_count: 3,
         diff_stat: Some("3 files changed, 142 insertions(+), 8 deletions(-)".to_string()),
-        changed_files_json: Some(r#"[
+        changed_files_json: Some(
+            r#"[
             {"status": "M", "path": "src/auth/jwt.rs"},
             {"status": "A", "path": "tests/jwt_validation_test.rs"},
             {"status": "M", "path": "Cargo.toml"}
-        ]"#.to_string()),
+        ]"#
+            .to_string(),
+        ),
         attribution: "OBSERVED".to_string(),
     };
     repo.save_git_snapshot(&snap_after)?;
@@ -564,7 +593,8 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
             agent_instance_id: None,
             event_type: "execution.started".to_string(),
             source: "wrapper".to_string(),
-            payload_json: r#"{"turn_index": 0, "model": "gpt-4o", "reasoning_effort": "high"}"#.to_string(),
+            payload_json: r#"{"turn_index": 0, "model": "gpt-4o", "reasoning_effort": "high"}"#
+                .to_string(),
         },
         Event {
             id: None,
@@ -576,7 +606,8 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
             agent_instance_id: None,
             event_type: "mcp.invoked".to_string(),
             source: "runner_event".to_string(),
-            payload_json: r#"{"tool": "filesystem.read_file", "path": "src/auth/mod.rs"}"#.to_string(),
+            payload_json: r#"{"tool": "filesystem.read_file", "path": "src/auth/mod.rs"}"#
+                .to_string(),
         },
         Event {
             id: None,
@@ -588,7 +619,8 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
             agent_instance_id: Some(subagent1.id.clone()),
             event_type: "subagent.started".to_string(),
             source: "runner_event".to_string(),
-            payload_json: r#"{"role": "reviewer", "task": "verify boundary conditions"}"#.to_string(),
+            payload_json: r#"{"role": "reviewer", "task": "verify boundary conditions"}"#
+                .to_string(),
         },
         Event {
             id: None,
@@ -600,7 +632,8 @@ pub fn seed_demo_data(repo: &Repository) -> Result<String> {
             agent_instance_id: None,
             event_type: "execution.completed".to_string(),
             source: "wrapper".to_string(),
-            payload_json: r#"{"status": "COMPLETED", "exit_code": 0, "duration_ms": 595000}"#.to_string(),
+            payload_json: r#"{"status": "COMPLETED", "exit_code": 0, "duration_ms": 595000}"#
+                .to_string(),
         },
     ];
 

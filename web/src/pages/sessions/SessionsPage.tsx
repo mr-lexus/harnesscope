@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useRefreshInterval } from '../../shared/preferences';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Table,
@@ -9,31 +10,29 @@ import {
   Badge,
   Loader,
   Center,
-  Select,
+  Select, Pagination, TextInput,
   Code,
 } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { fetchSessions, SessionFilterParams } from '../../shared/api/client';
 import { StatusBadge, UnknownText } from '../../shared/ui/Badges';
 import { IconHistory, IconDeviceDesktop, IconPlayerPlay } from '@tabler/icons-react';
 
 export const SessionsPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [filters, setFilters] = useState<SessionFilterParams>({
-    page: 1,
-    page_size: 20,
-  });
+  const [params,setParams] = useSearchParams();
+  const filters: SessionFilterParams = { runner:params.get('runner') || undefined,status:params.get('status') || undefined,page:Math.max(1,Number(params.get('page')) || 1),page_size:20 };
+  const setFilters = (value:SessionFilterParams) => { const p = new URLSearchParams(); Object.entries(value).forEach(([k,v])=>{if(v!==undefined && v!=='' && v!=='ALL') p.set(k,String(v));}); setParams(p,{replace:true}); };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['sessions', filters],
     queryFn: () => fetchSessions(filters),
-    refetchInterval: 5000,
+    refetchInterval: useRefreshInterval(),
   });
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
-      <Group justify="space-between" mb="lg">
+    <div className="panel-page">
+      <Group justify="space-between" mb="md">
         <div>
           <Title order={2}>Sessions</Title>
           <Text c="dimmed" size="sm">
@@ -49,19 +48,7 @@ export const SessionsPage: React.FC = () => {
 
       <Card withBorder p="sm" radius="md" mb="md">
         <Group>
-          <Select
-            label="Filter Runner"
-            placeholder="All runners"
-            data={[
-              { value: 'ALL', label: 'All runners' },
-              { value: 'codex', label: 'Codex' },
-              { value: 'copilot', label: 'Copilot' },
-              { value: 'opencode', label: 'OpenCode' },
-            ]}
-            value={filters.runner || 'ALL'}
-            onChange={(val) => setFilters({ ...filters, runner: val || 'ALL', page: 1 })}
-            size="xs"
-          />
+          <TextInput label="Runner" placeholder="Any runner (exact name)" size="xs" value={filters.runner || ''} onChange={e=>setFilters({...filters,runner:e.currentTarget.value,page:1})}/>
           <Select
             label="Filter Status"
             placeholder="All statuses"
@@ -77,7 +64,7 @@ export const SessionsPage: React.FC = () => {
         </Group>
       </Card>
 
-      <Card withBorder radius="md" p={0} style={{ overflow: 'hidden' }}>
+      <Card className="records-shell" withBorder radius="md" p={0} style={{ overflow: 'hidden' }}>
         {isLoading ? (
           <Center p="xl">
             <Loader size="lg" />
@@ -91,14 +78,15 @@ export const SessionsPage: React.FC = () => {
             <Text c="dimmed">No sessions found.</Text>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={800}>
+          <>
+          <div className="desktop-records"><Table.ScrollContainer minWidth={800}>
             <Table highlightOnHover verticalSpacing="sm">
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Session Title / Native ID</Table.Th>
                   <Table.Th>Runner</Table.Th>
                   <Table.Th>Executions</Table.Th>
-                  <Table.Th>Runtimes & Resumes</Table.Th>
+                  <Table.Th>Bindings & Resumes</Table.Th>
                   <Table.Th>Started</Table.Th>
                   <Table.Th>Last Active</Table.Th>
                   <Table.Th>Status</Table.Th>
@@ -108,14 +96,10 @@ export const SessionsPage: React.FC = () => {
                 {data.items.map((sess) => (
                   <Table.Tr
                     key={sess.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => navigate(`/sessions/${sess.id}`)}
                   >
                     <Table.Td>
                       <Group gap="xs" align="center">
-                        <Text fw={600} size="sm">
-                          {sess.title || 'Untitled Conversation'}
-                        </Text>
+                        <Link className="record-title" to={`/sessions/${encodeURIComponent(sess.id)}`}>{sess.title || 'Untitled conversation'}</Link>
                         {sess.parent_session_id && (
                           <Badge size="xs" variant="outline" color="orange">
                             Fork of {sess.parent_session_id.substring(0, 14)}...
@@ -143,14 +127,14 @@ export const SessionsPage: React.FC = () => {
 
                     <Table.Td>
                       <Badge variant="light" color="blue" leftSection={<IconPlayerPlay size={12} />}>
-                        {sess.execution_count} turns
+                        {sess.execution_count} executions
                       </Badge>
                     </Table.Td>
 
                     <Table.Td>
                       <Group gap="xs">
                         <Badge variant="light" color="gray" leftSection={<IconDeviceDesktop size={12} />}>
-                          {sess.runtime_count} runtimes
+                          {sess.runtime_count} bindings
                         </Badge>
                         {sess.resume_count > 0 && (
                           <Badge variant="filled" color="grape" size="sm" leftSection={<IconHistory size={12} />}>
@@ -179,9 +163,16 @@ export const SessionsPage: React.FC = () => {
                 ))}
               </Table.Tbody>
             </Table>
-          </Table.ScrollContainer>
+          </Table.ScrollContainer></div>
+          <div className="mobile-records">{data.items.map(sess=><article className="record-card" key={sess.id}>
+            <Group justify="space-between" mb={4}><Badge size="xs" variant="outline">{sess.runner_name}</Badge><StatusBadge status={sess.status}/></Group>
+            <Link className="record-title" to={`/sessions/${encodeURIComponent(sess.id)}`}>{sess.title || (sess.native_session_id!=='UNKNOWN' ? sess.native_session_id : 'Untitled conversation')}</Link>
+            <Text size="xs" c="dimmed" mt={4}>{sess.execution_count} executions · {sess.runtime_count} bindings · {sess.resume_count} resumes</Text>
+            <Text size="xs" c="dimmed">Last active {dayjs(sess.last_active_at).format('MMM D, HH:mm')}</Text>
+          </article>)}</div></>
         )}
       </Card>
+      {data && data.total_pages>1 && <Group justify="center" mt="sm"><Pagination size="sm" siblings={0} total={data.total_pages} value={filters.page} onChange={page=>setFilters({...filters,page})}/></Group>}
     </div>
   );
 };

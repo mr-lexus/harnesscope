@@ -20,6 +20,7 @@ export interface Execution {
   worktree_path: string | null;
   branch: string | null;
   head_sha: string | null;
+  capture_scope: 'PROCESS' | 'TURN' | 'UNKNOWN' | 'DEMO';
   git_attribution: 'OBSERVED' | 'CORRELATED' | 'AMBIGUOUS' | 'UNKNOWN' | string;
 }
 
@@ -97,11 +98,12 @@ export interface EventItem {
 }
 
 export interface ExecutionDetail {
+  usage: { input_tokens: number; cached_input_tokens: number; output_tokens: number; reasoning_output_tokens: number; total_tokens: number } | null;
   execution: Execution;
   runtime: RuntimeInstance | null;
   session: Session | null;
   agents: AgentInstance[];
   components: ExecutionComponent[];
   git_snapshots: GitSnapshot[];
-  events: EventItem[];
+  events_total: number;
 }

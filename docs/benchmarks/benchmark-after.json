@@ -1,0 +1,82 @@
+[
+  {
+    "events": 10000,
+    "stored_events": 10003,
+    "import_seconds": 3.755723599999328,
+    "events_per_second": 2662.6027538346507,
+    "api": {
+      "/api/v1/health": {
+        "median_ms": 0.5982000002404675,
+        "max_ms": 0.7305000035557896,
+        "response_bytes": 135
+      },
+      "/api/v1/executions": {
+        "median_ms": 0.7610000029671937,
+        "max_ms": 0.9387999889440835,
+        "response_bytes": 541
+      },
+      "/api/v1/retrospective": {
+        "median_ms": 1.4716000005137175,
+        "max_ms": 1.6694999940227717,
+        "response_bytes": 701
+      },
+      "/api/v1/executions/bench-execution": {
+        "median_ms": 2.183399992645718,
+        "max_ms": 2.5215999921783805,
+        "response_bytes": 1422
+      },
+      "/api/v1/sessions/bench-session": {
+        "median_ms": 2.0557000098051503,
+        "max_ms": 2.2622999968007207,
+        "response_bytes": 1013
+      }
+    },
+    "server_peak_rss_bytes": 25436160,
+    "db_and_wal_bytes": 7389624,
+    "profile": "single long execution, 128-byte synthetic payload, 500-event atomic batches, debug binary",
+    "backup_and_verified_restore_seconds": 0.32390349998604506,
+    "restored_events": 10003,
+    "event_page_bytes": 21598,
+    "database_bytes": 4255744
+  },
+  {
+    "events": 100000,
+    "stored_events": 100003,
+    "import_seconds": 38.165640899998834,
+    "events_per_second": 2620.1577555586928,
+    "api": {
+      "/api/v1/health": {
+        "median_ms": 0.5742000066675246,
+        "max_ms": 0.928700013901107,
+        "response_bytes": 135
+      },
+      "/api/v1/executions": {
+        "median_ms": 0.7708999910391867,
+        "max_ms": 0.9176000021398067,
+        "response_bytes": 541
+      },
+      "/api/v1/retrospective": {
+        "median_ms": 1.5113000117707998,
+        "max_ms": 1.74459999834653,
+        "response_bytes": 701
+      },
+      "/api/v1/executions/bench-execution": {
+        "median_ms": 14.048099998035468,
+        "max_ms": 14.199199998984113,
+        "response_bytes": 1423
+      },
+      "/api/v1/sessions/bench-session": {
+        "median_ms": 13.251800002763048,
+        "max_ms": 13.778199994703755,
+        "response_bytes": 1014
+      }
+    },
+    "server_peak_rss_bytes": 26304512,
+    "db_and_wal_bytes": 44954688,
+    "profile": "single long execution, 128-byte synthetic payload, 500-event atomic batches, debug binary",
+    "backup_and_verified_restore_seconds": 3.162307399994461,
+    "restored_events": 100003,
+    "event_page_bytes": 21750,
+    "database_bytes": 40706048
+  }
+]

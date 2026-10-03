@@ -9,6 +9,7 @@ pub struct ExecutionFilter {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
     pub period: Option<String>,
+    pub scope: Option<String>,
     pub runner: Option<String>,
     pub model: Option<String>,
     pub agent: Option<String>,
@@ -88,12 +89,61 @@ pub struct HealthMetrics {
 }
 
 pub struct Repository {
-    db: Database,
+    pub(crate) db: Database,
 }
 
 impl Repository {
     pub fn new(db: Database) -> Self {
         Self { db }
+    }
+
+    pub fn transaction<T>(&self, f: impl FnOnce() -> Result<T>) -> Result<T> {
+        self.db.transaction(f)
+    }
+
+    pub fn event_exists(&self, id: &str) -> Result<bool> {
+        self.db.with_conn(|conn| {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM events WHERE event_id = ?1)",
+                [id],
+                |r| r.get(0),
+            )
+        })
+    }
+
+    pub fn resolve_finished_conflicts(&self, timestamp: &str) -> Result<()> {
+        self.db.with_conn(|conn| {
+            conn.execute("UPDATE session_conflicts SET resolved_at=?1 WHERE resolved_at IS NULL AND (
+                execution_id IN (SELECT id FROM executions WHERE status!='RUNNING') OR
+                json_extract(details_json,'$.active_execution_id') IN (SELECT id FROM executions WHERE status!='RUNNING'))",[timestamp])?;
+            Ok(())
+        })
+    }
+
+    pub fn canonical_session_id(&self, id: &str) -> Result<String> {
+        self.db.with_conn(|conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT session_id FROM session_aliases WHERE alias = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or_else(|| id.to_string()))
+        })
+    }
+
+    pub fn save_session_alias(&self, alias: &str, id: &str) -> Result<()> {
+        if alias == id {
+            return Ok(());
+        }
+        self.db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO session_aliases(alias, session_id) VALUES (?1, ?2)",
+                params![alias, id],
+            )?;
+            Ok(())
+        })
     }
 
     pub fn save_runtime_instance(&self, r: &RuntimeInstance) -> Result<()> {
@@ -105,6 +155,12 @@ impl Repository {
                     command_line, started_at, ended_at, exit_code, status
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                 ON CONFLICT(id) DO UPDATE SET
+                    runner_name = excluded.runner_name,
+                    pid = excluded.pid,
+                    hostname = excluded.hostname,
+                    os = excluded.os,
+                    cwd = excluded.cwd,
+                    command_line = excluded.command_line,
                     runner_version = excluded.runner_version,
                     surface = excluded.surface,
                     ended_at = excluded.ended_at,
@@ -112,15 +168,32 @@ impl Repository {
                     status = excluded.status
                 "#,
                 params![
-                    r.id, r.runner_name, r.runner_version, r.surface, r.pid, r.hostname,
-                    r.os, r.cwd, r.command_line, r.started_at, r.ended_at, r.exit_code, r.status
+                    r.id,
+                    r.runner_name,
+                    r.runner_version,
+                    r.surface,
+                    r.pid,
+                    r.hostname,
+                    r.os,
+                    r.cwd,
+                    r.command_line,
+                    r.started_at,
+                    r.ended_at,
+                    r.exit_code,
+                    r.status
                 ],
             )?;
             Ok(())
         })
     }
 
-    pub fn update_runtime_stopped(&self, runtime_id: &str, ended_at: &str, exit_code: Option<i32>, status: &str) -> Result<()> {
+    pub fn update_runtime_stopped(
+        &self,
+        runtime_id: &str,
+        ended_at: &str,
+        exit_code: Option<i32>,
+        status: &str,
+    ) -> Result<()> {
         self.db.with_conn(|conn| {
             conn.execute(
                 r#"
@@ -136,36 +209,42 @@ impl Repository {
 
     pub fn find_runtime_by_id(&self, id: &str) -> Result<Option<RuntimeInstance>> {
         self.db.with_conn(|conn| {
-            let res = conn.query_row(
-                r#"
+            let res = conn
+                .query_row(
+                    r#"
                 SELECT id, runner_name, runner_version, surface, pid, hostname, os, cwd,
                        command_line, started_at, ended_at, exit_code, status
                 FROM runtime_instances WHERE id = ?1
                 "#,
-                params![id],
-                |row| {
-                    Ok(RuntimeInstance {
-                        id: row.get(0)?,
-                        runner_name: row.get(1)?,
-                        runner_version: row.get(2)?,
-                        surface: row.get(3)?,
-                        pid: row.get(4)?,
-                        hostname: row.get(5)?,
-                        os: row.get(6)?,
-                        cwd: row.get(7)?,
-                        command_line: row.get(8)?,
-                        started_at: row.get(9)?,
-                        ended_at: row.get(10)?,
-                        exit_code: row.get(11)?,
-                        status: row.get(12)?,
-                    })
-                },
-            ).optional()?;
+                    params![id],
+                    |row| {
+                        Ok(RuntimeInstance {
+                            id: row.get(0)?,
+                            runner_name: row.get(1)?,
+                            runner_version: row.get(2)?,
+                            surface: row.get(3)?,
+                            pid: row.get(4)?,
+                            hostname: row.get(5)?,
+                            os: row.get(6)?,
+                            cwd: row.get(7)?,
+                            command_line: row.get(8)?,
+                            started_at: row.get(9)?,
+                            ended_at: row.get(10)?,
+                            exit_code: row.get(11)?,
+                            status: row.get(12)?,
+                        })
+                    },
+                )
+                .optional()?;
             Ok(res)
         })
     }
 
-    pub fn find_session_by_native_id(&self, runner_name: &str, native_id: &str) -> Result<Option<Session>> {
+    pub fn find_session_by_native_id(
+        &self,
+        runner_name: &str,
+        native_id: &str,
+    ) -> Result<Option<Session>> {
         if native_id == "UNKNOWN" || native_id.trim().is_empty() {
             return Ok(None);
         }
@@ -254,7 +333,12 @@ impl Repository {
         })
     }
 
-    pub fn update_session_status(&self, id: &str, status: &str, ended_at: Option<&str>) -> Result<()> {
+    pub fn update_session_status(
+        &self,
+        id: &str,
+        status: &str,
+        ended_at: Option<&str>,
+    ) -> Result<()> {
         self.db.with_conn(|conn| {
             conn.execute(
                 r#"
@@ -284,7 +368,10 @@ impl Repository {
         })
     }
 
-    pub fn list_bindings_for_session(&self, session_id: &str) -> Result<Vec<RuntimeSessionBinding>> {
+    pub fn list_bindings_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<RuntimeSessionBinding>> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 r#"
@@ -325,8 +412,15 @@ impl Repository {
                     details_json = excluded.details_json
                 "#,
                 params![
-                    sc.id, sc.session_id, sc.conflicting_session_id, sc.execution_id,
-                    sc.conflict_type, sc.severity, sc.detected_at, sc.resolved_at, sc.details_json
+                    sc.id,
+                    sc.session_id,
+                    sc.conflicting_session_id,
+                    sc.execution_id,
+                    sc.conflict_type,
+                    sc.severity,
+                    sc.detected_at,
+                    sc.resolved_at,
+                    sc.details_json
                 ],
             )?;
             Ok(())
@@ -431,44 +525,52 @@ impl Repository {
         })
     }
 
-    pub fn find_active_execution_in_session(&self, session_id: &str, exclude_exec_id: &str) -> Result<Option<Execution>> {
+    pub fn find_active_execution_in_session(
+        &self,
+        session_id: &str,
+        exclude_exec_id: &str,
+    ) -> Result<Option<Execution>> {
         self.db.with_conn(|conn| {
-            let res = conn.query_row(
-                r#"
+            let res = conn
+                .query_row(
+                    r#"
                 SELECT id, session_id, runtime_id, native_execution_id, turn_index,
                        prompt_summary, model, reasoning_effort, selected_agent_role,
                        started_at, ended_at, duration_ms, status, exit_code, error_message,
-                       repo_root, worktree_path, branch, head_sha, git_attribution
+                       repo_root, worktree_path, branch, head_sha, git_attribution, capture_scope
                 FROM executions
                 WHERE session_id = ?1 AND status = 'RUNNING' AND id != ?2
+                  AND runtime_id IN (SELECT id FROM runtime_instances WHERE surface!='transcript')
                 LIMIT 1
                 "#,
-                params![session_id, exclude_exec_id],
-                |row| {
-                    Ok(Execution {
-                        id: row.get(0)?,
-                        session_id: row.get(1)?,
-                        runtime_id: row.get(2)?,
-                        native_execution_id: row.get(3)?,
-                        turn_index: row.get(4)?,
-                        prompt_summary: row.get(5)?,
-                        model: row.get(6)?,
-                        reasoning_effort: row.get(7)?,
-                        selected_agent_role: row.get(8)?,
-                        started_at: row.get(9)?,
-                        ended_at: row.get(10)?,
-                        duration_ms: row.get(11)?,
-                        status: row.get(12)?,
-                        exit_code: row.get(13)?,
-                        error_message: row.get(14)?,
-                        repo_root: row.get(15)?,
-                        worktree_path: row.get(16)?,
-                        branch: row.get(17)?,
-                        head_sha: row.get(18)?,
-                        git_attribution: row.get(19)?,
-                    })
-                },
-            ).optional()?;
+                    params![session_id, exclude_exec_id],
+                    |row| {
+                        Ok(Execution {
+                            id: row.get(0)?,
+                            session_id: row.get(1)?,
+                            runtime_id: row.get(2)?,
+                            native_execution_id: row.get(3)?,
+                            turn_index: row.get(4)?,
+                            prompt_summary: row.get(5)?,
+                            model: row.get(6)?,
+                            reasoning_effort: row.get(7)?,
+                            selected_agent_role: row.get(8)?,
+                            started_at: row.get(9)?,
+                            ended_at: row.get(10)?,
+                            duration_ms: row.get(11)?,
+                            status: row.get(12)?,
+                            exit_code: row.get(13)?,
+                            error_message: row.get(14)?,
+                            repo_root: row.get(15)?,
+                            worktree_path: row.get(16)?,
+                            branch: row.get(17)?,
+                            head_sha: row.get(18)?,
+                            git_attribution: row.get(19)?,
+                            capture_scope: row.get(20)?,
+                        })
+                    },
+                )
+                .optional()?;
             Ok(res)
         })
     }
@@ -481,8 +583,8 @@ impl Repository {
                     id, session_id, runtime_id, native_execution_id, turn_index,
                     prompt_summary, model, reasoning_effort, selected_agent_role,
                     started_at, ended_at, duration_ms, status, exit_code, error_message,
-                    repo_root, worktree_path, branch, head_sha, git_attribution
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                    repo_root, worktree_path, branch, head_sha, git_attribution, capture_scope
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
                 ON CONFLICT(id) DO UPDATE SET
                     prompt_summary = COALESCE(excluded.prompt_summary, executions.prompt_summary),
                     model = CASE WHEN excluded.model != 'UNKNOWN' THEN excluded.model ELSE executions.model END,
@@ -497,13 +599,14 @@ impl Repository {
                     worktree_path = COALESCE(excluded.worktree_path, executions.worktree_path),
                     branch = COALESCE(excluded.branch, executions.branch),
                     head_sha = COALESCE(excluded.head_sha, executions.head_sha),
-                    git_attribution = excluded.git_attribution
+                    git_attribution = excluded.git_attribution,
+                    capture_scope = excluded.capture_scope
                 "#,
                 params![
                     e.id, e.session_id, e.runtime_id, e.native_execution_id, e.turn_index,
                     e.prompt_summary, e.model, e.reasoning_effort, e.selected_agent_role,
                     e.started_at, e.ended_at, e.duration_ms, e.status, e.exit_code, e.error_message,
-                    e.repo_root, e.worktree_path, e.branch, e.head_sha, e.git_attribution
+                    e.repo_root, e.worktree_path, e.branch, e.head_sha, e.git_attribution, e.capture_scope
                 ],
             )?;
             Ok(())
@@ -534,45 +637,52 @@ impl Repository {
 
     pub fn find_execution_by_id(&self, id: &str) -> Result<Option<Execution>> {
         self.db.with_conn(|conn| {
-            let res = conn.query_row(
-                r#"
+            let res = conn
+                .query_row(
+                    r#"
                 SELECT id, session_id, runtime_id, native_execution_id, turn_index,
                        prompt_summary, model, reasoning_effort, selected_agent_role,
                        started_at, ended_at, duration_ms, status, exit_code, error_message,
-                       repo_root, worktree_path, branch, head_sha, git_attribution
+                       repo_root, worktree_path, branch, head_sha, git_attribution, capture_scope
                 FROM executions WHERE id = ?1
                 "#,
-                params![id],
-                |row| {
-                    Ok(Execution {
-                        id: row.get(0)?,
-                        session_id: row.get(1)?,
-                        runtime_id: row.get(2)?,
-                        native_execution_id: row.get(3)?,
-                        turn_index: row.get(4)?,
-                        prompt_summary: row.get(5)?,
-                        model: row.get(6)?,
-                        reasoning_effort: row.get(7)?,
-                        selected_agent_role: row.get(8)?,
-                        started_at: row.get(9)?,
-                        ended_at: row.get(10)?,
-                        duration_ms: row.get(11)?,
-                        status: row.get(12)?,
-                        exit_code: row.get(13)?,
-                        error_message: row.get(14)?,
-                        repo_root: row.get(15)?,
-                        worktree_path: row.get(16)?,
-                        branch: row.get(17)?,
-                        head_sha: row.get(18)?,
-                        git_attribution: row.get(19)?,
-                    })
-                },
-            ).optional()?;
+                    params![id],
+                    |row| {
+                        Ok(Execution {
+                            id: row.get(0)?,
+                            session_id: row.get(1)?,
+                            runtime_id: row.get(2)?,
+                            native_execution_id: row.get(3)?,
+                            turn_index: row.get(4)?,
+                            prompt_summary: row.get(5)?,
+                            model: row.get(6)?,
+                            reasoning_effort: row.get(7)?,
+                            selected_agent_role: row.get(8)?,
+                            started_at: row.get(9)?,
+                            ended_at: row.get(10)?,
+                            duration_ms: row.get(11)?,
+                            status: row.get(12)?,
+                            exit_code: row.get(13)?,
+                            error_message: row.get(14)?,
+                            repo_root: row.get(15)?,
+                            worktree_path: row.get(16)?,
+                            branch: row.get(17)?,
+                            head_sha: row.get(18)?,
+                            git_attribution: row.get(19)?,
+                            capture_scope: row.get(20)?,
+                        })
+                    },
+                )
+                .optional()?;
             Ok(res)
         })
     }
 
-    pub fn count_active_executions_in_worktree(&self, worktree_path: &str, exclude_exec_id: &str) -> Result<usize> {
+    pub fn count_active_executions_in_worktree(
+        &self,
+        worktree_path: &str,
+        exclude_exec_id: &str,
+    ) -> Result<usize> {
         self.db.with_conn(|conn| {
             let count: i64 = conn.query_row(
                 r#"
@@ -641,6 +751,7 @@ impl Repository {
                 SELECT e.id, e.session_id FROM executions e
                 WHERE e.session_id IN (SELECT id FROM related_sessions)
                   AND e.status = 'RUNNING'
+                  AND e.runtime_id IN (SELECT id FROM runtime_instances WHERE surface!='transcript')
                   AND e.id != ?2
                 ORDER BY e.started_at
                 "#,
@@ -658,6 +769,10 @@ impl Repository {
 
     pub fn update_execution_git_attribution(&self, id: &str, attribution: &str) -> Result<()> {
         self.db.with_conn(|conn| {
+            conn.execute(
+                "UPDATE git_snapshots SET attribution = ?2 WHERE execution_id = ?1",
+                params![id, attribution],
+            )?;
             conn.execute(
                 "UPDATE executions SET git_attribution = ?2 WHERE id = ?1",
                 params![id, attribution],
@@ -682,7 +797,10 @@ impl Repository {
         })
     }
 
-    pub fn list_agent_instances_for_execution(&self, execution_id: &str) -> Result<Vec<AgentInstance>> {
+    pub fn list_agent_instances_for_execution(
+        &self,
+        execution_id: &str,
+    ) -> Result<Vec<AgentInstance>> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 r#"
@@ -759,7 +877,10 @@ impl Repository {
         })
     }
 
-    pub fn list_components_for_execution(&self, execution_id: &str) -> Result<Vec<ExecutionComponent>> {
+    pub fn list_components_for_execution(
+        &self,
+        execution_id: &str,
+    ) -> Result<Vec<ExecutionComponent>> {
         self.db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 r#"
@@ -956,7 +1077,7 @@ impl Repository {
                     _ => None,
                 };
                 if let Some(m) = modifier {
-                    conditions.push(format!("e.started_at >= datetime('now', '{}')", m));
+                    conditions.push(format!("julianday(e.started_at) >= julianday('now', '{}')", m));
                 }
             }
 
@@ -1003,6 +1124,13 @@ impl Repository {
                 }
             }
 
+            if let Some(scope) = &filter.scope {
+                if !scope.is_empty() && scope != "ALL" {
+                    conditions.push("e.capture_scope = ?".to_string());
+                    query_params.push(scope.clone().into());
+                }
+            }
+
             if let Some(component) = &filter.component {
                 if !component.is_empty() && component != "ALL" {
                     conditions.push(
@@ -1037,19 +1165,19 @@ impl Repository {
 
             let page = filter.page.unwrap_or(1).max(1);
             let page_size = filter.page_size.unwrap_or(20).clamp(1, 100);
-            let offset = (page - 1) * page_size;
+            let offset = u64::from(page - 1) * u64::from(page_size);
 
             let query_sql = format!(
                 r#"
                 SELECT e.id, e.session_id, e.runtime_id, e.native_execution_id, e.turn_index,
                        e.prompt_summary, e.model, e.reasoning_effort, e.selected_agent_role,
                        e.started_at, e.ended_at, e.duration_ms, e.status, e.exit_code, e.error_message,
-                       e.repo_root, e.worktree_path, e.branch, e.head_sha, e.git_attribution
+                       e.repo_root, e.worktree_path, e.branch, e.head_sha, e.git_attribution, e.capture_scope
                 FROM executions e
                 JOIN runtime_instances r ON e.runtime_id = r.id
                 JOIN sessions s ON e.session_id = s.id
                 {}
-                ORDER BY e.started_at DESC
+                ORDER BY e.started_at DESC, e.id DESC
                 LIMIT {} OFFSET {}
                 "#,
                 where_clause, page_size, offset
@@ -1080,6 +1208,7 @@ impl Repository {
                         branch: row.get(17)?,
                         head_sha: row.get(18)?,
                         git_attribution: row.get(19)?,
+                        capture_scope: row.get(20)?,
                     })
                 },
             )?;
@@ -1127,14 +1256,14 @@ impl Repository {
 
             let page = filter.page.unwrap_or(1).max(1);
             let page_size = filter.page_size.unwrap_or(20).clamp(1, 100);
-            let offset = (page - 1) * page_size;
+            let offset = u64::from(page - 1) * u64::from(page_size);
 
             let query_sql = format!(
                 r#"
                 SELECT s.id, s.runner_name, s.native_session_id, s.title, s.started_at, s.ended_at, s.status, s.created_at,
                        COUNT(DISTINCT e.id) as exec_count,
                        COUNT(DISTINCT b.runtime_id) as runtime_count,
-                       SUM(CASE WHEN b.reason = 'RESUME' THEN 1 ELSE 0 END) as resume_count,
+                       COUNT(DISTINCT CASE WHEN b.reason = 'RESUME' THEN b.id END) as resume_count,
                        COALESCE(MAX(e.started_at), s.started_at) as last_active_at,
                        s.parent_session_id,
                        s.fork_reason,
@@ -1146,7 +1275,7 @@ impl Repository {
                 LEFT JOIN session_conflicts sc ON (s.id = sc.session_id OR s.id = sc.conflicting_session_id)
                 {}
                 GROUP BY s.id
-                ORDER BY last_active_at DESC
+                ORDER BY last_active_at DESC, s.id DESC
                 LIMIT {} OFFSET {}
                 "#,
                 where_clause, page_size, offset
@@ -1193,7 +1322,7 @@ impl Repository {
                 SELECT id, session_id, runtime_id, native_execution_id, turn_index,
                        prompt_summary, model, reasoning_effort, selected_agent_role,
                        started_at, ended_at, duration_ms, status, exit_code, error_message,
-                       repo_root, worktree_path, branch, head_sha, git_attribution
+                       repo_root, worktree_path, branch, head_sha, git_attribution, capture_scope
                 FROM executions WHERE session_id = ?1
                 ORDER BY started_at ASC
                 "#,
@@ -1220,6 +1349,7 @@ impl Repository {
                     branch: row.get(17)?,
                     head_sha: row.get(18)?,
                     git_attribution: row.get(19)?,
+                    capture_scope: row.get(20)?,
                 })
             })?;
             let mut list = Vec::new();
@@ -1341,10 +1471,20 @@ impl Repository {
 
     pub fn get_health_metrics(&self) -> Result<HealthMetrics> {
         self.db.with_conn(|conn| {
-            let active_executions: i64 = conn.query_row("SELECT COUNT(*) FROM executions WHERE status = 'RUNNING'", [], |r| r.get(0))?;
-            let active_runtimes: i64 = conn.query_row("SELECT COUNT(*) FROM runtime_instances WHERE status = 'RUNNING'", [], |r| r.get(0))?;
-            let total_executions: i64 = conn.query_row("SELECT COUNT(*) FROM executions", [], |r| r.get(0))?;
-            let total_sessions: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))?;
+            let active_executions: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM executions WHERE status = 'RUNNING'",
+                [],
+                |r| r.get(0),
+            )?;
+            let active_runtimes: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM runtime_instances WHERE status = 'RUNNING'",
+                [],
+                |r| r.get(0),
+            )?;
+            let total_executions: i64 =
+                conn.query_row("SELECT COUNT(*) FROM executions", [], |r| r.get(0))?;
+            let total_sessions: i64 =
+                conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))?;
 
             Ok(HealthMetrics {
                 status: "ok".to_string(),

@@ -49,10 +49,10 @@ pub enum Commands {
     },
     /// Start Harnesscope server (ingestion, SQLite, API, Web UI)
     Serve {
-        #[arg(long, default_value = "127.0.0.1")]
+        #[arg(long, env = "HARNESSCOPE_SERVER_HOST", default_value = "127.0.0.1")]
         host: String,
 
-        #[arg(long, default_value_t = 4242)]
+        #[arg(long, env = "HARNESSCOPE_SERVER_PORT", default_value_t = 4242)]
         port: u16,
     },
     /// Server management commands
@@ -62,11 +62,32 @@ pub enum Commands {
     },
     /// Open Harnesscope Web UI in default browser
     Ui {
-        #[arg(long, default_value_t = 4242)]
+        #[arg(long, env = "HARNESSCOPE_SERVER_PORT", default_value_t = 4242)]
         port: u16,
     },
     /// Diagnose toolchain, runner discovery, database, and system status
     Doctor,
+    /// Import normalized JSON / JSONL events from any agent adapter (max 2 MiB, 500 events)
+    Ingest {
+        /// JSON object, JSON array or JSONL file; omit to read stdin
+        #[arg(long)]
+        file: Option<std::path::PathBuf>,
+    },
+    /// Register, inspect or scan native telemetry sources stored in this database
+    Sources {
+        #[command(subcommand)]
+        action: SourceAction,
+    },
+    /// Inspect or retry durable wrapper telemetry for the configured database and server URL
+    Outbox {
+        #[command(subcommand)]
+        action: OutboxAction,
+    },
+    /// Consistent main-database snapshots (pending outbox and source files are separate)
+    Backup {
+        #[command(subcommand)]
+        action: BackupAction,
+    },
     /// Deterministic demo data commands
     Demo {
         #[command(subcommand)]
@@ -80,12 +101,12 @@ pub enum ServerAction {
     Status,
     /// Start Harnesscope server as a background daemon
     Start {
-        #[arg(long, default_value_t = 4242)]
+        #[arg(long, env = "HARNESSCOPE_SERVER_PORT", default_value_t = 4242)]
         port: u16,
     },
     /// Stop the running Harnesscope server
     Stop {
-        #[arg(long, default_value_t = 4242)]
+        #[arg(long, env = "HARNESSCOPE_SERVER_PORT", default_value_t = 4242)]
         port: u16,
     },
 }
@@ -94,4 +115,57 @@ pub enum ServerAction {
 pub enum DemoAction {
     /// Populate database with deterministic demo sessions, executions, and components
     Seed,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SourceAction {
+    /// Register a Codex rollout file or directory (rollout-*.jsonl); serve polls it every 5 seconds
+    AddCodex {
+        #[arg(long)]
+        path: std::path::PathBuf,
+        /// Store redacted prompt summaries and error messages; default is metadata only
+        #[arg(long)]
+        include_content: bool,
+    },
+    /// List sources and file checkpoints as JSON
+    List,
+    /// Run one bounded import pass without an HTTP server; repeat while files show BACKLOG
+    Scan,
+    /// Pause collection without deleting any data
+    Pause { id: String },
+    /// Resume collection from saved checkpoints
+    Resume { id: String },
+    /// Remove a registration and its checkpoints; imported telemetry is retained
+    Remove { id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum OutboxAction {
+    /// List pending delivery batches as JSON
+    Status,
+    /// Clear retry delays and validation blocks; retains all queued events
+    Retry,
+    /// Try up to 100 queued batches; nonzero exit if any remain
+    Flush,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BackupAction {
+    /// Snapshot the configured database, including committed WAL changes
+    Create {
+        #[arg(long)]
+        output: std::path::PathBuf,
+    },
+    /// Check SQLite integrity, foreign keys and supported Harnesscope schema
+    Verify {
+        #[arg(long)]
+        file: std::path::PathBuf,
+    },
+    /// Restore to a NEW path, verify it and pause native collectors
+    Restore {
+        #[arg(long)]
+        file: std::path::PathBuf,
+        #[arg(long)]
+        output: std::path::PathBuf,
+    },
 }

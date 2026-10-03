@@ -47,12 +47,19 @@ jobs:
 
       - name: Set version variable
         shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            RELEASE_VERSION="$INPUT_VERSION"
           else
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            RELEASE_VERSION="${GITHUB_REF#refs/tags/}"
           fi
+          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9][0-9A-Za-z.-]*$ ]]; then
+            echo "Invalid release version" >&2
+            exit 1
+          fi
+          echo "VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -121,12 +128,19 @@ jobs:
 
       - name: Set version variable
         shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            RELEASE_VERSION="$INPUT_VERSION"
           else
-            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            RELEASE_VERSION="${GITHUB_REF#refs/tags/}"
           fi
+          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9][0-9A-Za-z.-]*$ ]]; then
+            echo "Invalid release version" >&2
+            exit 1
+          fi
+          echo "VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v8

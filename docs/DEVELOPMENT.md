@@ -6,7 +6,7 @@ This document provides developer guidelines for building, testing, extending, an
 
 ## 1. Prerequisites
 
-- **Rust toolchain**: 1.80+ (`cargo`, `rustc`)
+- **Rust toolchain**: current stable (`cargo`, `rustc`)
 - **Node.js**: v20.19+ or v22.12+ with `npm` (Node.js 24 LTS recommended)
 - **Git**: 2.30+ installed and available on PATH
 - **Supported OS**: Windows 10/11, macOS (Intel/Apple Silicon), Linux (Ubuntu, Debian, Fedora, Arch)
@@ -76,7 +76,7 @@ harnesscope/
 To run the Vite dev server with hot module reloading:
 ```bash
 cd web
-npm install
+npm ci
 npm run dev
 ```
 Vite runs at `http://localhost:5173` and automatically proxies `/api` requests to `http://127.0.0.1:4242`.
@@ -111,7 +111,9 @@ The resulting executable is located at `target/release/harnesscope` (or `harness
 
 Run the full integration test suite:
 ```bash
-cargo test
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
 ```
 
 The test suite covers:
@@ -185,3 +187,5 @@ To support a new AI coding agent (e.g. `cursor`, `aider`, `cline`):
    }
    ```
 5. **Add parser unit tests** verifying argument parsing and config discovery.
+
+The normalized adapter event contract and review/report APIs are documented in [EVENTS.md](EVENTS.md). Current known limitations are in [AUDIT.ru.md](AUDIT.ru.md). Run blocking wrappers from `tokio::task::spawn_blocking`, never directly inside an async handler.

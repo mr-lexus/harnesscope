@@ -1,4 +1,4 @@
-import { Execution, EventItem } from '../execution/types';
+import { Execution } from '../execution/types';
 
 export interface SessionConflict {
   id: string;
@@ -50,7 +50,7 @@ export interface SessionDetail {
   session: Session;
   bindings: RuntimeSessionBinding[];
   executions: Execution[];
-  events: EventItem[];
+  events_total: number;
   child_forks: Session[];
   conflicts: SessionConflict[];
 }

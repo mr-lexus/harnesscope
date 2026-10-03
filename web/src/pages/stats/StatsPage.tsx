@@ -1,3 +1,4 @@
+import { useRefreshInterval } from '../../shared/preferences';
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -20,7 +21,7 @@ export const StatsPage: React.FC = () => {
   const { data: stats, isLoading, error } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
-    refetchInterval: 5000,
+    refetchInterval: useRefreshInterval(),
   });
 
   if (isLoading) {
@@ -47,25 +48,25 @@ export const StatsPage: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
-      <Group justify="space-between" mb="lg">
+    <div className="panel-page">
+      <Group justify="space-between" mb="md">
         <div>
-          <Title order={2}>Deterministic Telemetry Stats</Title>
+          <Title order={2}>Activity statistics</Title>
           <Text c="dimmed" size="sm">
-            Pure SQL aggregations directly from local SQLite database (Zero LLM / Zero Heuristics).
+            All-time recorded activity, including demo data. Use Overview for filtered outcome comparisons.
           </Text>
         </div>
       </Group>
 
       {/* Overview Cards */}
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md" mb="xl">
+      <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="md" mb="md">
         <Card withBorder radius="md" p="md">
           <Group justify="space-between">
             <Text size="xs" c="dimmed" fw={700} tt="uppercase">Total Executions</Text>
             <IconTerminal2 size={20} color="gray" />
           </Group>
           <Title order={2} mt="xs">{stats.total_executions}</Title>
-          <Text size="xs" c="dimmed" mt={4}>Turn-level agent jobs</Text>
+          <Text size="xs" c="dimmed" mt={4}>Process observations and turns</Text>
         </Card>
 
         <Card withBorder radius="md" p="md">
@@ -85,21 +86,21 @@ export const StatsPage: React.FC = () => {
           <Title order={2} mt="xs" c={stats.total_conflicts > 0 ? 'red' : 'dimmed'}>
             {stats.total_conflicts}
           </Title>
-          <Text size="xs" c="dimmed" mt={4}>Agent collisions detected</Text>
+          <Text size="xs" c="dimmed" mt={4}>Recorded overlaps</Text>
         </Card>
 
         <Card withBorder radius="md" p="md">
           <Group justify="space-between">
-            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Runtime Instances</Text>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Runtime observers</Text>
             <IconCpu size={20} color="gray" />
           </Group>
           <Title order={2} mt="xs">{stats.total_runtimes}</Title>
-          <Text size="xs" c="dimmed" mt={4}>Spanned process instances</Text>
+          <Text size="xs" c="dimmed" mt={4}>Process and transcript observers</Text>
         </Card>
 
         <Card withBorder radius="md" p="md">
           <Group justify="space-between">
-            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Avg Turn Duration</Text>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Avg Execution Duration</Text>
             <IconTool size={20} color="gray" />
           </Group>
           <Title order={2} mt="xs">{formatDuration(stats.avg_duration_ms)}</Title>
@@ -108,7 +109,7 @@ export const StatsPage: React.FC = () => {
       </SimpleGrid>
 
       {/* Breakdowns Grid */}
-      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg" mb="xl">
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm" mb="md">
         {/* By Runner */}
         <Card withBorder radius="md" p="md">
           <Title order={4} mb="md">Executions by Runner</Title>
@@ -188,7 +189,7 @@ export const StatsPage: React.FC = () => {
       </SimpleGrid>
 
       {/* Components Statistics */}
-      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         {/* MCP Configured vs Invoked */}
         <Card withBorder radius="md" p="md">
           <Title order={4} mb="sm">MCP Servers: Configured vs Invoked</Title>

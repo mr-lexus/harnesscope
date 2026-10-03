@@ -1,3 +1,5 @@
+> Current observation boundaries: wrappers track the launched process, not every internal turn or detached GUI session. Telemetry delivery has bounded waits, and failures do not stop the child. See [EVENTS.md](EVENTS.md) and [audit limitations](AUDIT.ru.md).
+
 # Cross-Platform Architecture & Runner Support
 
 Harnesscope is engineered from the ground up for native performance across **macOS**, **Linux**, and **Windows**.
@@ -12,7 +14,7 @@ Harnesscope is engineered from the ground up for native performance across **mac
 | **Database** | SQLite WAL mode (bundled C compiler, zero external runtime dependencies) | Same | Same |
 | **Path Normalization** | Forward slashes (`/`), Unicode safe | Forward slashes (`/`), Unicode safe | Converts `\` to `/` in Git contexts |
 | **Executable Lookup** | PATH + `/opt/homebrew/bin` + `/Applications/*.app/Contents/MacOS/*` | PATH + `/usr/local/bin` + `~/.local/bin` + `/snap/bin` | PATH + `.exe`, `.cmd`, `.bat`, `.ps1` |
-| **Daemon Spawning** | Detached POSIX child process (`Stdio::null`) | Detached POSIX child process (`Stdio::null`) | `DETACHED_PROCESS` + `CREATE_NO_WINDOW` flags |
+| **Daemon Spawning** | Background POSIX child process (`Stdio::null`) | Background POSIX child process (`Stdio::null`) | `DETACHED_PROCESS` + `CREATE_NO_WINDOW` flags |
 | **Process Stdio** | Inherited TTY (`Stdio::inherit`) | Inherited TTY (`Stdio::inherit`) | Inherited Console / Windows Terminal |
 
 ---
@@ -50,7 +52,7 @@ Whenever any `harnesscope <runner>` or `harnesscope run ...` command is executed
 3. It captures pre-execution Git context and runtime metadata.
 4. It launches the target command with transparent stdio.
 5. On process exit, it captures post-execution Git diffs and completion metrics.
-6. **Telemetry never blocks or breaks the agent process.** If the server ever crashes, the agent command continues unimpeded.
+6. **Telemetry failures do not stop the agent process. Delivery has bounded waits.** If the server ever crashes, the agent command continues unimpeded.
 
 ---
 

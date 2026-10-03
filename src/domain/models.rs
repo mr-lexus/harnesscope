@@ -77,6 +77,7 @@ pub struct Execution {
     pub branch: Option<String>,
     pub head_sha: Option<String>,
     pub git_attribution: String,
+    pub capture_scope: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

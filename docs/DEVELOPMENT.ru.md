@@ -6,7 +6,7 @@
 
 ## 1. Системные требования
 
-- **Rust toolchain**: 1.80+ (`cargo`, `rustc`)
+- **Rust toolchain**: current stable (`cargo`, `rustc`)
 - **Node.js**: v20.19+ или v22.12+ с `npm` (рекомендуется Node.js 24 LTS)
 - **Git**: 2.30+ установлен и доступен в PATH
 - **Поддерживаемые ОС**: Windows 10/11, macOS (Intel/Apple Silicon), Linux (Ubuntu, Debian, Fedora, Arch)
@@ -76,7 +76,7 @@ harnesscope/
 Для запуска Vite с горячей перезагрузкой:
 ```bash
 cd web
-npm install
+npm ci
 npm run dev
 ```
 Vite доступен на `http://localhost:5173` и автоматически проксирует `/api` на `http://127.0.0.1:4242`.
@@ -111,7 +111,9 @@ cargo build --release
 
 Запуск всех интеграционных тестов:
 ```bash
-cargo test
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
 ```
 
 Тестовый набор покрывает все обязательные сценарии:
@@ -166,3 +168,5 @@ rm -f ~/.local/share/harnesscope/harnesscope.db*
 3. **Зарегистрируйте подкоманду CLI** в `src/cli.rs`.
 4. **Свяжите вызов в `src/main.rs`** через `execute_wrapper`.
 5. **Добавьте тесты** парсера аргументов и конфигураций.
+
+The normalized adapter event contract and review/report APIs are documented in [EVENTS.md](EVENTS.md). Current known limitations are in [AUDIT.ru.md](AUDIT.ru.md). Run blocking wrappers from `tokio::task::spawn_blocking`, never directly inside an async handler.

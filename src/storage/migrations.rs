@@ -1,6 +1,8 @@
 use rusqlite::{Connection, Result};
 
 pub fn run_migrations(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let conn = &tx;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS _schema_migrations (
@@ -10,13 +12,17 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         "#,
     )?;
 
-    let current_version: i64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM _schema_migrations",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    let current_version: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM _schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if current_version > 5 {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Database schema is newer than this binary".into(),
+        ));
+    }
 
     if current_version < 1 {
         apply_migration_v1(conn)?;
@@ -34,7 +40,59 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    Ok(())
+    if current_version < 3 {
+        conn.execute_batch(r#"
+            CREATE TABLE session_aliases (
+                alias TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            ALTER TABLE executions ADD COLUMN capture_scope TEXT NOT NULL DEFAULT 'UNKNOWN';
+            CREATE TABLE execution_reviews (
+                execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE,
+                outcome TEXT NOT NULL CHECK(outcome IN ('UNREVIEWED','ACCEPTED','REWORK','REJECTED')),
+                notes TEXT NOT NULL DEFAULT '',
+                experiment TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_reviews_experiment ON execution_reviews(experiment);
+            CREATE INDEX idx_executions_status ON executions(status);
+            INSERT INTO _schema_migrations(version, applied_at) VALUES (3, datetime('now'));
+        "#)?;
+    }
+    if current_version < 4 {
+        conn.execute_batch(r#"
+            CREATE TABLE telemetry_sources (
+                id TEXT PRIMARY KEY, adapter TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+                enabled INTEGER NOT NULL DEFAULT 1, include_content INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL, last_scan_at TEXT, last_success_at TEXT, last_error TEXT
+            );
+            CREATE TABLE source_files (
+                source_id TEXT NOT NULL REFERENCES telemetry_sources(id) ON DELETE CASCADE,
+                path TEXT NOT NULL, byte_offset INTEGER NOT NULL DEFAULT 0, line_number INTEGER NOT NULL DEFAULT 0,
+                prefix_hash TEXT NOT NULL DEFAULT '', state_json TEXT NOT NULL DEFAULT '{}',
+                events_count INTEGER NOT NULL DEFAULT 0, ignored_count INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'NEW', last_error TEXT, updated_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0, modified_stamp TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(source_id,path)
+            );
+            CREATE TABLE execution_usage (
+                execution_id TEXT PRIMARY KEY REFERENCES executions(id) ON DELETE CASCADE,
+                input_tokens INTEGER NOT NULL, cached_input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL, reasoning_output_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL, observed_at TEXT NOT NULL
+            );
+            INSERT INTO _schema_migrations(version,applied_at) VALUES(4,datetime('now'));
+        "#)?;
+    }
+    if current_version < 5 {
+        conn.execute_batch(
+            "CREATE TABLE runtime_observations (
+            runtime_id TEXT PRIMARY KEY REFERENCES runtime_instances(id) ON DELETE CASCADE,
+            observed_at TEXT NOT NULL, received_at TEXT NOT NULL);
+            INSERT INTO _schema_migrations(version,applied_at) VALUES(5,datetime('now'));",
+        )?;
+    }
+    tx.commit()
 }
 
 fn apply_migration_v2(conn: &Connection) -> Result<()> {
@@ -224,4 +282,59 @@ fn apply_migration_v1(conn: &Connection) -> Result<()> {
         "#,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn version_two() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_migration_v1(&conn).unwrap();
+        apply_migration_v2(&conn).unwrap();
+        conn.execute_batch("CREATE TABLE _schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL); INSERT INTO _schema_migrations VALUES(1,'before'),(2,'before');").unwrap();
+        conn
+    }
+    #[test]
+    fn upgrades_v2_once_and_preserves_existing_records() {
+        let mut conn = version_two();
+        conn.execute("INSERT INTO sessions(id,runner_name,started_at) VALUES('existing','custom','2026-01-01T00:00:00Z')",[]).unwrap();
+        run_migrations(&mut conn).unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT MAX(version) FROM _schema_migrations", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            5
+        );
+    }
+    #[test]
+    fn failed_upgrade_rolls_back_ddl_and_version() {
+        let mut conn = version_two();
+        conn.execute_batch("CREATE TABLE execution_reviews(existing TEXT);")
+            .unwrap();
+        assert!(run_migrations(&mut conn).is_err());
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name='session_aliases'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            conn.query_row("SELECT MAX(version) FROM _schema_migrations", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert!(conn
+            .prepare("SELECT capture_scope FROM executions")
+            .is_err());
+    }
 }

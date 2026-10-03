@@ -1,0 +1,76 @@
+[
+  {
+    "events": 10000,
+    "stored_events": 10003,
+    "import_seconds": 3.7001997999905143,
+    "events_per_second": 2702.5567646443405,
+    "api": {
+      "/api/v1/health": {
+        "median_ms": 0.5754999874625355,
+        "max_ms": 0.7359000010183081,
+        "response_bytes": 135
+      },
+      "/api/v1/executions": {
+        "median_ms": 0.763899995945394,
+        "max_ms": 0.9132999985013157,
+        "response_bytes": 541
+      },
+      "/api/v1/retrospective": {
+        "median_ms": 1.5118000010261312,
+        "max_ms": 1.7070000030798838,
+        "response_bytes": 701
+      },
+      "/api/v1/executions/bench-execution": {
+        "median_ms": 562.932600005297,
+        "max_ms": 564.184099988779,
+        "response_bytes": 4308416
+      },
+      "/api/v1/sessions/bench-session": {
+        "median_ms": 554.0770999941742,
+        "max_ms": 566.2850999942748,
+        "response_bytes": 4308714
+      }
+    },
+    "server_peak_rss_bytes": 50569216,
+    "db_and_wal_bytes": 7385528,
+    "profile": "single long execution, 128-byte synthetic payload, 500-event atomic batches, debug binary",
+    "database_bytes": 4255744
+  },
+  {
+    "events": 100000,
+    "stored_events": 100003,
+    "import_seconds": 37.50132599999779,
+    "events_per_second": 2666.572376667585,
+    "api": {
+      "/api/v1/health": {
+        "median_ms": 0.5649999948218465,
+        "max_ms": 0.7889999978942797,
+        "response_bytes": 135
+      },
+      "/api/v1/executions": {
+        "median_ms": 0.7527000125264749,
+        "max_ms": 0.9336000075563788,
+        "response_bytes": 541
+      },
+      "/api/v1/retrospective": {
+        "median_ms": 1.5131999971345067,
+        "max_ms": 1.6657000087434426,
+        "response_bytes": 701
+      },
+      "/api/v1/executions/bench-execution": {
+        "median_ms": 5536.785800009966,
+        "max_ms": 5652.9716000077315,
+        "response_bytes": 43368420
+      },
+      "/api/v1/sessions/bench-session": {
+        "median_ms": 5552.681400004076,
+        "max_ms": 5574.194900007569,
+        "response_bytes": 43368718
+      }
+    },
+    "server_peak_rss_bytes": 269295616,
+    "db_and_wal_bytes": 44950592,
+    "profile": "single long execution, 128-byte synthetic payload, 500-event atomic batches, debug binary",
+    "database_bytes": 40706048
+  }
+]

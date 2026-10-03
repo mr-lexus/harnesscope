@@ -57,10 +57,15 @@ fn test_unknown_event_fields() {
 
     let event: IngestEvent = serde_json::from_str(json_str).expect("deserialize resilient event");
     let result = engine.process_event(&event);
-    assert!(result.is_ok(), "Engine must accept unknown fields without error");
+    assert!(
+        result.is_ok(),
+        "Engine must accept unknown fields without error"
+    );
 
     // Check that event was stored in events table and secret was redacted
-    let stored_events = repo.list_events_for_session("dummy_session").unwrap_or_default();
+    let stored_events = repo
+        .list_events_for_session("dummy_session")
+        .unwrap_or_default();
     assert!(stored_events.is_empty()); // dummy session has none
 }
 
@@ -108,8 +113,14 @@ fn test_two_simultaneous_executions() {
     engine.process_event(&ev1).unwrap();
     engine.process_event(&ev2).unwrap();
 
-    let e1 = repo.find_execution_by_id(&exec1_id).unwrap().expect("e1 exists");
-    let e2 = repo.find_execution_by_id(&exec2_id).unwrap().expect("e2 exists");
+    let e1 = repo
+        .find_execution_by_id(&exec1_id)
+        .unwrap()
+        .expect("e1 exists");
+    let e2 = repo
+        .find_execution_by_id(&exec2_id)
+        .unwrap()
+        .expect("e2 exists");
 
     assert_eq!(e1.status, "RUNNING");
     assert_eq!(e2.status, "RUNNING");
@@ -247,7 +258,10 @@ fn test_session_resume_across_runtime_restart() {
     engine.process_event(&stop_a).unwrap();
 
     // Verify session still exists and is not destroyed!
-    let session_after_stop = repo.find_session_by_native_id("codex", native_id).unwrap().unwrap();
+    let session_after_stop = repo
+        .find_session_by_native_id("codex", native_id)
+        .unwrap()
+        .unwrap();
     let initial_session_id = session_after_stop.id.clone();
 
     // Runtime B starts later (resumed same session)
@@ -337,8 +351,13 @@ fn test_same_worktree_branch_does_not_merge_sessions() {
     };
     engine.process_event(&ev2).unwrap();
 
-    let (sessions, total) = repo.list_sessions(&harnesscope::storage::repository::SessionFilter::default()).unwrap();
-    assert_eq!(total, 2, "Two unknown sessions in the same worktree must NEVER merge!");
+    let (sessions, total) = repo
+        .list_sessions(&harnesscope::storage::repository::SessionFilter::default())
+        .unwrap();
+    assert_eq!(
+        total, 2,
+        "Two unknown sessions in the same worktree must NEVER merge!"
+    );
     assert_ne!(sessions[0].id, sessions[1].id);
 }
 
@@ -371,7 +390,10 @@ async fn test_concurrent_event_ingestion() {
 
     for h in handles {
         let res = h.await.unwrap();
-        assert!(res.is_ok(), "Concurrent event ingestion must succeed without SQLite locks");
+        assert!(
+            res.is_ok(),
+            "Concurrent event ingestion must succeed without SQLite locks"
+        );
     }
 }
 
@@ -444,7 +466,13 @@ fn test_wrapper_exit_code_passthrough() {
 #[test]
 fn test_generic_wrapper_execution() {
     use harnesscope::runners::execute_wrapper_generic;
-    let code = execute_wrapper_generic("custom_agent", "gui", "nonexistent_custom_cmd", &[], "http://127.0.0.1:4242");
+    let code = execute_wrapper_generic(
+        "custom_agent",
+        "gui",
+        "nonexistent_custom_cmd",
+        &[],
+        "http://127.0.0.1:4242",
+    );
     assert_eq!(code, 1);
 }
 
@@ -625,8 +653,18 @@ fn test_worktree_overlap_conflict_marks_both_attributions_ambiguous() {
     let engine = CorrelationEngine::new(repo.clone());
 
     for (event_id, runtime_id, session_id, native_id) in [
-        ("evt_worktree_session_a", "run_worktree_a", "sess_worktree_a", "native_a"),
-        ("evt_worktree_session_b", "run_worktree_b", "sess_worktree_b", "native_b"),
+        (
+            "evt_worktree_session_a",
+            "run_worktree_a",
+            "sess_worktree_a",
+            "native_a",
+        ),
+        (
+            "evt_worktree_session_b",
+            "run_worktree_b",
+            "sess_worktree_b",
+            "native_b",
+        ),
     ] {
         let event = IngestEvent {
             event_id: event_id.to_string(),
@@ -644,8 +682,20 @@ fn test_worktree_overlap_conflict_marks_both_attributions_ambiguous() {
     }
 
     for (event_id, runtime_id, session_id, execution_id, timestamp) in [
-        ("evt_worktree_exec_a", "run_worktree_a", "sess_worktree_a", "exec_worktree_a", "2026-09-27T11:01:00Z"),
-        ("evt_worktree_exec_b", "run_worktree_b", "sess_worktree_b", "exec_worktree_b", "2026-09-27T11:02:00Z"),
+        (
+            "evt_worktree_exec_a",
+            "run_worktree_a",
+            "sess_worktree_a",
+            "exec_worktree_a",
+            "2026-09-27T11:01:00Z",
+        ),
+        (
+            "evt_worktree_exec_b",
+            "run_worktree_b",
+            "sess_worktree_b",
+            "exec_worktree_b",
+            "2026-09-27T11:02:00Z",
+        ),
     ] {
         let event = IngestEvent {
             event_id: event_id.to_string(),
@@ -663,15 +713,23 @@ fn test_worktree_overlap_conflict_marks_both_attributions_ambiguous() {
     }
 
     assert_eq!(
-        repo.find_execution_by_id("exec_worktree_a").unwrap().unwrap().git_attribution,
+        repo.find_execution_by_id("exec_worktree_a")
+            .unwrap()
+            .unwrap()
+            .git_attribution,
         "AMBIGUOUS"
     );
     assert_eq!(
-        repo.find_execution_by_id("exec_worktree_b").unwrap().unwrap().git_attribution,
+        repo.find_execution_by_id("exec_worktree_b")
+            .unwrap()
+            .unwrap()
+            .git_attribution,
         "AMBIGUOUS"
     );
     let conflicts = repo.list_conflicts_for_session("sess_worktree_b").unwrap();
-    assert!(conflicts.iter().any(|conflict| conflict.conflict_type == "WORKTREE_OVERLAP"));
+    assert!(conflicts
+        .iter()
+        .any(|conflict| conflict.conflict_type == "WORKTREE_OVERLAP"));
 }
 
 // 16. Fork divergence is detected even when the parent starts after the child
@@ -713,8 +771,20 @@ fn test_fork_divergence_when_parent_starts_after_child() {
     engine.process_event(&child).unwrap();
 
     for (event_id, runtime_id, session_id, execution_id, timestamp) in [
-        ("evt_child_exec_early", "run_child_early", "sess_child_early", "exec_child_early", "2026-09-27T12:02:00Z"),
-        ("evt_parent_exec_late", "run_parent_late", "sess_parent_late", "exec_parent_late", "2026-09-27T12:03:00Z"),
+        (
+            "evt_child_exec_early",
+            "run_child_early",
+            "sess_child_early",
+            "exec_child_early",
+            "2026-09-27T12:02:00Z",
+        ),
+        (
+            "evt_parent_exec_late",
+            "run_parent_late",
+            "sess_parent_late",
+            "exec_parent_late",
+            "2026-09-27T12:03:00Z",
+        ),
     ] {
         let event = IngestEvent {
             event_id: event_id.to_string(),

@@ -1,5 +1,6 @@
+import { useRefreshInterval } from '../../shared/preferences';
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -34,6 +35,7 @@ export const SessionDetailPage: React.FC = () => {
     queryKey: ['session', id],
     queryFn: () => fetchSessionDetail(id!),
     enabled: Boolean(id),
+    refetchInterval: useRefreshInterval(),
   });
 
   if (isLoading) {
@@ -60,7 +62,7 @@ export const SessionDetailPage: React.FC = () => {
   const { session, bindings, executions, child_forks = [], conflicts = [] } = data;
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div className="panel-page">
       <Button
         variant="subtle"
         leftSection={<IconArrowLeft size={16} />}
@@ -72,7 +74,7 @@ export const SessionDetailPage: React.FC = () => {
 
       {/* Conflicts Alert Card */}
       {conflicts.length > 0 && (
-        <Card withBorder radius="md" p="md" mb="lg" style={{ borderColor: 'var(--mantine-color-red-6)', backgroundColor: 'rgba(255, 0, 0, 0.05)' }}>
+        <Card withBorder radius="md" p="md" mb="md" style={{ borderColor: 'var(--mantine-color-red-6)', backgroundColor: 'rgba(255, 0, 0, 0.05)' }}>
           <Group justify="space-between" mb="xs">
             <Group gap="xs">
               <span style={{ fontSize: '20px' }}>⚠️</span>
@@ -81,7 +83,7 @@ export const SessionDetailPage: React.FC = () => {
               </Title>
             </Group>
             <Badge color="red" variant="filled">
-              Conflict Resolution Required
+              Review overlaps
             </Badge>
           </Group>
           <Text size="xs" c="dimmed" mb="sm">
@@ -95,6 +97,7 @@ export const SessionDetailPage: React.FC = () => {
                     <Badge color={c.severity === 'CRITICAL' ? 'red' : 'yellow'} variant="light">
                       {c.conflict_type}
                     </Badge>
+                    <Badge variant="outline" color={c.resolved_at ? 'gray' : 'orange'}>{c.resolved_at ? 'Overlap ended' : 'Open'}</Badge>
                     <Text size="xs" c="dimmed">Detected: {dayjs(c.detected_at).format('YYYY-MM-DD HH:mm:ss')}</Text>
                   </Group>
                   {c.conflicting_session_id && (
@@ -115,7 +118,7 @@ export const SessionDetailPage: React.FC = () => {
       )}
 
       {/* Session Info Card */}
-      <Card withBorder radius="md" p="lg" mb="xl">
+      <Card withBorder radius="md" p="sm" mb="md">
         <Group justify="space-between" align="flex-start">
           <div>
             <Group gap="sm">
@@ -164,7 +167,7 @@ export const SessionDetailPage: React.FC = () => {
 
           <Group gap="xs">
             <Badge size="lg" variant="light" color="indigo" leftSection={<IconHistory size={16} />}>
-              {bindings.length} Runtimes Bound
+              {bindings.length} Observation Bindings
             </Badge>
             {child_forks.length > 0 && (
               <Badge size="lg" variant="outline" color="grape">
@@ -197,14 +200,14 @@ export const SessionDetailPage: React.FC = () => {
       </Card>
 
       <Title order={4} mb="md">
-        Session Lifecycle & Runtime Bindings
+        Observation history
       </Title>
-      <Text size="sm" c="dimmed" mb="lg">
-        Illustrating session continuity across separate process executions (process stopped != session stopped).
+      <Text size="sm" c="dimmed" mb="md">
+        Bindings connect process observations or imported transcripts to this conversation. IMPORT is historical evidence, not a running process.
       </Text>
 
-      <Stack gap="lg">
-        {bindings.map((b, idx) => {
+      <Stack gap="sm">
+        {bindings.map((b) => {
           const boundExecutions = executions.filter((e) => e.runtime_id === b.runtime_id);
 
           return (
@@ -213,18 +216,18 @@ export const SessionDetailPage: React.FC = () => {
                 <Group gap="sm">
                   <IconDeviceDesktop size={20} color="gray" />
                   <Title order={5}>
-                    Runtime: <Code>{b.runtime_id}</Code>
+                    {b.reason === 'IMPORT' ? 'Transcript' : 'Runtime'} <Text component="span" size="xs" title={b.runtime_id}>…{b.runtime_id.slice(-12)}</Text>
                   </Title>
                   <Badge
                     color={b.reason === 'RESUME' ? 'grape' : 'blue'}
                     variant={b.reason === 'RESUME' ? 'filled' : 'light'}
                     leftSection={b.reason === 'RESUME' ? <IconHistory size={12} /> : undefined}
                   >
-                    {b.reason === 'RESUME' ? 'RESUMED SESSION' : 'INITIAL RUNTIME'}
+                    {b.reason === 'IMPORT' ? 'IMPORTED TRANSCRIPT' : b.reason === 'RESUME' ? 'RESUMED SESSION' : 'INITIAL RUNTIME'}
                   </Badge>
                 </Group>
                 <Text size="xs" c="dimmed">
-                  Bound: {dayjs(b.bound_at).format('HH:mm:ss')} {b.unbound_at ? `— Stopped: ${dayjs(b.unbound_at).format('HH:mm:ss')}` : '— Active'}
+                  Bound: {dayjs(b.bound_at).format('HH:mm:ss')} {b.unbound_at ? `— Stopped: ${dayjs(b.unbound_at).format('HH:mm:ss')}` : b.reason === 'IMPORT' ? '— Process status unknown' : '— No stop event'}
                 </Text>
               </Group>
 
@@ -234,10 +237,10 @@ export const SessionDetailPage: React.FC = () => {
                 </Text>
               )}
 
-              <Divider my="xs" label={`Executions in this runtime (${boundExecutions.length})`} labelPosition="left" />
+              <Divider my="xs" label={`Executions in this observation (${boundExecutions.length})`} labelPosition="left" />
 
               {boundExecutions.length === 0 ? (
-                <Text size="xs" c="dimmed" fs="italic">No turns recorded for this runtime binding.</Text>
+                <Text size="xs" c="dimmed" fs="italic">No executions recorded for this binding.</Text>
               ) : (
                 <Stack gap="xs">
                   {boundExecutions.map((e) => (
@@ -247,17 +250,14 @@ export const SessionDetailPage: React.FC = () => {
                       style={{
                         backgroundColor: 'var(--mantine-color-default-hover)',
                         borderRadius: '6px',
-                        cursor: 'pointer',
                       }}
-                      onClick={() => navigate(`/executions/${e.id}`)}
+
                     >
                       <Group justify="space-between">
                         <div>
                           <Group gap="xs">
                             <IconTerminal2 size={16} color="gray" />
-                            <Text size="sm" fw={600}>
-                              Turn #{e.turn_index + 1}: {e.prompt_summary || 'No prompt summary recorded'}
-                            </Text>
+                            <Link className="record-title" to={`/executions/${encodeURIComponent(e.id)}`}>{e.capture_scope === 'TURN' ? `Turn #${e.turn_index + 1}` : e.capture_scope} · {e.prompt_summary || e.model}</Link>
                             <StatusBadge status={e.status} />
                           </Group>
                           <Group gap="md" mt={4}>
@@ -266,7 +266,7 @@ export const SessionDetailPage: React.FC = () => {
                             <Text size="xs" c="dimmed">Started: {dayjs(e.started_at).format('HH:mm:ss')}</Text>
                           </Group>
                         </div>
-                        <Button variant="light" size="xs">View Turn</Button>
+                        <Button component={Link} to={`/executions/${encodeURIComponent(e.id)}`} variant="subtle" size="xs">Open</Button>
                       </Group>
                     </Box>
                   ))}

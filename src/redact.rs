@@ -2,6 +2,98 @@ use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
 
+const REDACTED: &str = "[REDACTED_SECRET]";
+
+fn secret_key(key: &str) -> bool {
+    let normalized: String = key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    [
+        "apikey",
+        "accesstoken",
+        "refreshtoken",
+        "authtoken",
+        "password",
+        "passwd",
+        "privatekey",
+        "clientsecret",
+        "secretkey",
+        "authorization",
+        "cookie",
+    ]
+    .iter()
+    .any(|suffix| normalized.ends_with(suffix))
+        || matches!(normalized.as_str(), "token" | "secret")
+}
+
+/// Walk structured data before serializing; regex replacement on JSON can corrupt
+/// escaped values and misses secrets nested inside arrays or provider env maps.
+pub fn redact_value(value: &serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        if secret_key(key) {
+                            Value::String(REDACTED.into())
+                        } else {
+                            redact_value(value)
+                        },
+                    )
+                })
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(redact_value).collect()),
+        Value::String(value) => Value::String(redact_secrets(value)),
+        other => other.clone(),
+    }
+}
+
+/// Preserve argument boundaries while masking values, before flattening a command
+/// for telemetry. A quoted password may contain whitespace or quote characters.
+pub fn redact_command_args(args: &[String]) -> Vec<String> {
+    let mut secret_value = false;
+    args.iter()
+        .map(|arg| {
+            if secret_value {
+                secret_value = false;
+                return REDACTED.to_string();
+            }
+            if let Some((key, _)) = arg.split_once('=') {
+                if secret_key(key.trim_start_matches('-')) {
+                    return format!("{key}={REDACTED}");
+                }
+            }
+            if arg.starts_with('-') && secret_key(arg.trim_start_matches('-')) {
+                secret_value = true;
+            }
+            redact_secrets(arg)
+        })
+        .collect()
+}
+
+static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+    r#"(?i)((?:[a-z0-9_\-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|passwd|client[_-]?secret|secret[_-]?key|private[_-]?key)|token|secret)\s*[=:]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}]+)"#
+).unwrap()
+});
+static CLI_SECRET: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+    r#"(?i)(--?(?:api[-_]?key|access[-_]?token|token|secret|password)(?:=|\s+))(?:"[^"]*"|'[^']*'|[^\s]+)"#
+).unwrap()
+});
+static AUTH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)\b(?:bearer|basic)\s+[^\s"'<>]+"#).unwrap());
+static PRIVATE_KEY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+    r"(?s)-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----.*?-----END (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
+).unwrap()
+});
+
 static SECRET_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
         // OpenAI api key
@@ -16,7 +108,10 @@ static SECRET_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // Bearer tokens
         Regex::new(r"(?i)bearer\s+[a-zA-Z0-9_\-\.]{20,}").unwrap(),
         // Generic JSON key-values for secrets
-        Regex::new(r#"(?i)"(api_?key|token|access_?token|secret|password|private_?key)"\s*:\s*"([^"]+)""#).unwrap(),
+        Regex::new(
+            r#"(?i)"(api_?key|token|access_?token|secret|password|private_?key)"\s*:\s*"([^"]+)""#,
+        )
+        .unwrap(),
         // Generic CLI arg tokens: --api-key=xyz, --token xyz
         Regex::new(r#"(?i)(--?(?:api[-_]?key|token|secret|password)[=\s])([^\s"']+)"#).unwrap(),
         // URL with user:password
@@ -25,25 +120,45 @@ static SECRET_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 });
 
 pub fn redact_secrets(input: &str) -> String {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(input) {
+        if value.is_object() || value.is_array() {
+            return serde_json::to_string_pretty(&redact_value(&value)).unwrap_or_default();
+        }
+    }
     let mut result = input.to_string();
+    result = PRIVATE_KEY.replace_all(&result, REDACTED).into_owned();
+
+    result = CLI_SECRET
+        .replace_all(&result, "${1}[REDACTED_SECRET]")
+        .into_owned();
+    result = ASSIGNMENT
+        .replace_all(&result, "${1}[REDACTED_SECRET]")
+        .into_owned();
+    result = AUTH.replace_all(&result, REDACTED).into_owned();
 
     // Redact specific known token prefixes
     for (i, re) in SECRET_PATTERNS.iter().enumerate() {
         if i == 7 {
             // JSON key-values
-            result = re.replace_all(&result, |caps: &regex::Captures| {
-                format!(r#""{}": "[REDACTED_SECRET]""#, &caps[1])
-            }).to_string();
+            result = re
+                .replace_all(&result, |caps: &regex::Captures| {
+                    format!(r#""{}": "[REDACTED_SECRET]""#, &caps[1])
+                })
+                .to_string();
         } else if i == 8 {
             // CLI arg tokens
-            result = re.replace_all(&result, |caps: &regex::Captures| {
-                format!("{}[REDACTED_SECRET]", &caps[1])
-            }).to_string();
+            result = re
+                .replace_all(&result, |caps: &regex::Captures| {
+                    format!("{}[REDACTED_SECRET]", &caps[1])
+                })
+                .to_string();
         } else if i == 9 {
             // URL credentials
-            result = re.replace_all(&result, |caps: &regex::Captures| {
-                format!("https://{}:[REDACTED_SECRET]@", &caps[1])
-            }).to_string();
+            result = re
+                .replace_all(&result, |caps: &regex::Captures| {
+                    format!("https://{}:[REDACTED_SECRET]@", &caps[1])
+                })
+                .to_string();
         } else {
             result = re.replace_all(&result, "[REDACTED_SECRET]").to_string();
         }
@@ -85,6 +200,25 @@ mod tests {
         assert!(!redacted.contains("super_secret_value_12345"));
         assert!(redacted.contains(r#""apiKey": "[REDACTED_SECRET]""#));
         assert!(redacted.contains(r#""model": "claude-3-5-sonnet""#));
+    }
+
+    #[test]
+    fn command_redaction_keeps_multiword_secret_values_private() {
+        let args = [
+            "--password",
+            "first word \"last\"",
+            "--model",
+            "test-model",
+            "--api-key=other secret",
+            "PROVIDER_ACCESS_TOKEN=third secret",
+        ]
+        .map(str::to_string);
+        let output = redact_command_args(&args).join(" ");
+        for secret in ["first", "last", "other secret", "third secret"] {
+            assert!(!output.contains(secret), "leaked {secret}: {output}");
+        }
+        assert!(output.contains("--model test-model"));
+        assert_eq!(args[1], "first word \"last\"");
     }
 
     #[test]

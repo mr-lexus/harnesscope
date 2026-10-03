@@ -8,6 +8,7 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 2000,
       retry: 1,
+      refetchOnWindowFocus: false,
     },
   },
 });
@@ -15,7 +16,8 @@ const queryClient = new QueryClient({
 const theme = createTheme({
   primaryColor: 'blue',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-  defaultRadius: 'md',
+  defaultRadius: 'sm',
+  headings: { sizes: { h1: {fontSize:'1.5rem'}, h2: {fontSize:'1.375rem'}, h3: {fontSize:'1rem'} } },
 });
 
 export const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => {

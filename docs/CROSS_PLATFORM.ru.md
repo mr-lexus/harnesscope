@@ -1,3 +1,5 @@
+> Current observation boundaries: wrappers track the launched process, not every internal turn or detached GUI session. Telemetry delivery has bounded waits, and failures do not stop the child. See [EVENTS.md](EVENTS.md) and [audit limitations](AUDIT.ru.md).
+
 # Кроссплатформенная архитектура и запуск агентов
 
 Harnesscope с самого начала спроектирован для нативной и легковесной работы на **macOS**, **Linux** и **Windows**.
