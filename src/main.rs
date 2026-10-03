@@ -21,6 +21,82 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load();
 
     match cli.command {
+        Commands::Mcp => {
+            let repo = Repository::new(Database::open_read_only(&config.db_path)?);
+            harnesscope::mcp::serve(&repo)?;
+        }
+        Commands::Capture { action } => {
+            use harnesscope::cli::CaptureAction;
+            match action {
+                CaptureAction::Hook { database } => {
+                    let mut config = config;
+                    if let Some(database) = database {
+                        config.db_path = database;
+                    }
+                    // A capture failure must never block or steer the agent.
+                    if harnesscope::capture_io::hook(&config).is_err() {
+                        eprintln!("Harnesscope capture unavailable; native history can still be collected.");
+                    }
+                }
+                CaptureAction::Config => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&harnesscope::capture_io::hook_configuration(
+                        &std::env::current_exe()?,
+                        &config.db_path
+                    )?)?
+                ),
+                CaptureAction::Setup { codex_home, remove } => println!(
+                    "{}",
+                    harnesscope::capture_setup::configure(
+                        &codex_home,
+                        &std::env::current_exe()?,
+                        config.server_port,
+                        remove
+                    )?
+                ),
+                CaptureAction::Drain | CaptureAction::Workflow { .. } => {
+                    config.ensure_data_dir()?;
+                    let repo = Repository::new(Database::open(&config.db_path)?);
+                    if let CaptureAction::Workflow { path } = action {
+                        repo.register_workflow(&path)?;
+                    } else {
+                        println!(
+                            "{}",
+                            harnesscope::capture_io::drain(&repo, &config.db_path)?
+                        );
+                    }
+                }
+            }
+        }
+        Commands::Evidence { action } => {
+            use harnesscope::cli::EvidenceAction;
+            config.ensure_data_dir()?;
+            let repo = Repository::new(Database::open(&config.db_path)?);
+            let result = match action {
+                EvidenceAction::Coverage => repo.evidence_coverage()?,
+                EvidenceAction::Reindex => {
+                    serde_json::json!({"reindexed":repo.reindex_evidence()?})
+                }
+                EvidenceAction::Export {
+                    output,
+                    project,
+                    since,
+                    until,
+                    task,
+                } => repo.export_evidence(
+                    &harnesscope::storage::evidence::EvidenceFilter {
+                        project,
+                        since,
+                        until,
+                        task,
+                        ..Default::default()
+                    },
+                    &output,
+                )?,
+                EvidenceAction::Import { path } => harnesscope::capture_io::import(&repo, &path)?,
+            };
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
         Commands::Codex { args } => {
             let code = tokio::task::spawn_blocking(move || {
                 execute_wrapper("codex", &args, &config.server_url())
@@ -437,8 +513,17 @@ async fn run_server(
             let scan_repo = repo.clone();
             let scan_engine = engine.clone();
             let scan_stop = worker_stop.clone();
+            let capture_db = scan_repo.database_path();
             let backlogged = match tokio::task::spawn_blocking(move || -> Result<bool, String> {
                 harnesscope::adapters::scan_sources(&scan_repo, &scan_engine, &scan_stop)?;
+                if let Some(path) = capture_db? {
+                    if harnesscope::capture_io::drain(&scan_repo, &path).is_err() {
+                        tracing::warn!("Hook capture queue could not drain; retained for retry");
+                    }
+                }
+                if scan_repo.scan_workflows().is_err() {
+                    tracing::warn!("Some workflow roots could not be captured; retrying next pass");
+                }
                 Ok(
                     scan_repo.collection_status().map_err(|e| e.to_string())?["backlog_files"]
                         .as_u64()

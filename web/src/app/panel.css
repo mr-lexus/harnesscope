@@ -53,3 +53,15 @@ a { text-underline-offset: 3px; }
 .event-list summary strong { color:var(--mantine-color-text); }
 .event-list details[open] { padding-bottom:8px; }
 @media(max-width:650px) { .event-list summary { min-height:40px; } }
+/* Keep evidence dense on desktop while allowing every label to wrap on mobile. */
+.evidence-page { max-width: 1440px; margin: auto; }
+.evidence-row { border-bottom: 1px solid var(--mantine-color-default-border); padding: 5px 0; }
+.evidence-row summary { cursor: pointer; display: grid; grid-template-columns: 155px minmax(100px,1fr) minmax(60px,120px) 80px; gap: 8px; align-items: center; font-size: 12px; }
+.evidence-row summary strong { overflow-wrap: anywhere; }
+.evidence-row summary time { color: var(--mantine-color-dimmed); font-variant-numeric: tabular-nums; }
+@media(max-width: 600px) {
+  .evidence-row summary { grid-template-columns: minmax(0,1fr) 80px; gap: 3px 6px; }
+  .evidence-row summary time { grid-column: 1; grid-row: 1; }
+  .evidence-row summary strong { grid-column: 1; grid-row: 2; }
+  .evidence-row summary span { grid-column: 2; }
+}

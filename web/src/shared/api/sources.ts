@@ -39,6 +39,7 @@ export const setSourceEnabled = (id: string, enabled: boolean) => request(`/${en
   method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
 });
 export const removeSource = (id: string) => request(`/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const setSourceContent = (id: string, include_content:boolean) => request(`/${encodeURIComponent(id)}`, { method: 'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_content}) });
 
 
 export interface CollectionStatus {

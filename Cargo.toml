@@ -1,6 +1,6 @@
 [package]
 name = "harnesscope"
-version = "0.2.3"
+version = "0.3.0-rc.1"
 edition = "2021"
 authors = ["Harnesscope Contributors"]
 description = "Local cross-platform telemetry utility for AI coding agents"
@@ -30,6 +30,9 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 regex = "1.10"
 sha2 = "0.10"
 hex = "0.4"
+flate2 = "1.0"
+fs2 = "0.4"
+futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 open = "5.3"
 directories = "5.0"

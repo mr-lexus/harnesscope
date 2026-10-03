@@ -60,7 +60,7 @@ pub fn verify(path: &Path) -> Result<BackupReport, String> {
             r.get(0)
         })
         .map_err(|e| format!("Not a Harnesscope database: {e}"))?;
-    if !(1..=5).contains(&version) {
+    if !(1..=6).contains(&version) {
         return Err(format!("Unsupported schema version {version}"));
     }
     for (since, table) in [
@@ -81,6 +81,16 @@ pub fn verify(path: &Path) -> Result<BackupReport, String> {
         (4, "source_files"),
         (4, "execution_usage"),
         (5, "runtime_observations"),
+        (6, "observations"),
+        (6, "evidence_objects"),
+        (6, "evidence_items"),
+        (6, "retro_tasks"),
+        (6, "task_links"),
+        (6, "task_marks"),
+        (6, "workflow_roots"),
+        (6, "workflow_versions"),
+        (6, "external_task_versions"),
+        (6, "evidence_cursors"),
     ] {
         if version >= since {
             let exists: bool = tx
@@ -99,6 +109,28 @@ pub fn verify(path: &Path) -> Result<BackupReport, String> {
         tx.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .map_err(|e| e.to_string())
     };
+    if version >= 6 {
+        let mut stmt = tx
+            .prepare("SELECT hash,bytes,inline_json FROM evidence_objects")
+            .map_err(|e| e.to_string())?;
+        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let hash: String = row.get(0).map_err(|e| e.to_string())?;
+            let bytes: u64 = row.get(1).map_err(|e| e.to_string())?;
+            if !super::evidence::valid_hash(&hash) || bytes > crate::capture::MAX_OBJECT as u64 {
+                return Err("Invalid evidence object".into());
+            }
+            let inline: Option<String> = row.get(2).map_err(|e| e.to_string())?;
+            let text = match inline {
+                Some(s) => s,
+                None => std::fs::read_to_string(super::evidence::object_dir(path).join(&hash))
+                    .map_err(|_| "Missing evidence object")?,
+            };
+            if text.len() as u64 != bytes || crate::redact::sha256_digest(&text) != hash {
+                return Err("Corrupt evidence object".into());
+            }
+        }
+    }
     let report = BackupReport {
         path: path.to_string_lossy().into(),
         scope: "main_database",
@@ -201,6 +233,48 @@ fn copy(
         destination
             .pragma_update(None, "journal_mode", "DELETE")
             .map_err(|e| e.to_string())?;
+        // Portable snapshots inline immutable objects one at a time. The live
+        // archive remains separate, but backup/restore needs only this one file.
+        let has_objects: bool = destination
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='evidence_objects')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if has_objects {
+            let hashes: Vec<String> = destination
+                .prepare("SELECT hash FROM evidence_objects WHERE inline_json IS NULL")
+                .map_err(|e| e.to_string())?
+                .query_map([], |r| r.get(0))
+                .map_err(|e| e.to_string())?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(|e| e.to_string())?;
+            for hash in hashes {
+                if !super::evidence::valid_hash(&hash) {
+                    return Err("Invalid evidence hash".into());
+                }
+                let object = super::evidence::object_dir(source).join(&hash);
+                if std::fs::metadata(&object)
+                    .map_err(|_| "Missing evidence object")?
+                    .len()
+                    > crate::capture::MAX_OBJECT as u64
+                {
+                    return Err("Oversized evidence object".into());
+                }
+                let text =
+                    std::fs::read_to_string(object).map_err(|_| "Cannot read evidence object")?;
+                if crate::redact::sha256_digest(&text) != hash {
+                    return Err("Corrupt evidence object".into());
+                }
+                destination
+                    .execute(
+                        "UPDATE evidence_objects SET inline_json=?2 WHERE hash=?1",
+                        rusqlite::params![hash, text],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+        }
         verify(file.path())?;
         if restoring {
             super::migrations::run_migrations(&mut destination).map_err(|e| e.to_string())?;

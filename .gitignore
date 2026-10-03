@@ -16,6 +16,8 @@ web/dist/
 *.sqlite3-wal
 *.sqlite3-shm
 *.sqlite3-journal
+*.db.objects/
+*.db.capture/
 
 # OS files
 .DS_Store

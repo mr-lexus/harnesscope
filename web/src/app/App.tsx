@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, Center, Loader } from '@mantine/core';
 const SourcesPage = lazy(() => import('../pages/sources/SourcesPage').then(m => ({default:m.SourcesPage})));
+const EvidencePage = lazy(() => import('../pages/evidence/EvidencePage').then(m => ({default:m.EvidencePage})));
 const MonitoringPage = lazy(() => import('../pages/monitoring/MonitoringPage').then(m => ({default:m.MonitoringPage})));
 import { Header } from '../widgets/Header';
 const ExecutionsPage = lazy(() => import('../pages/executions/ExecutionsPage').then(m => ({default:m.ExecutionsPage})));
@@ -22,6 +23,7 @@ export const App: React.FC = () => {
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/sessions/:id" element={<SessionDetailPage />} />
         <Route path="/sources" element={<SourcesPage />} />
+        <Route path="/evidence" element={<EvidencePage />} />
         <Route path="/monitoring" element={<MonitoringPage />} />
         <Route path="/stats" element={<StatsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -18,7 +18,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         |row| row.get(0),
     )?;
 
-    if current_version > 5 {
+    if current_version > 6 {
         return Err(rusqlite::Error::InvalidParameterName(
             "Database schema is newer than this binary".into(),
         ));
@@ -91,6 +91,12 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
             observed_at TEXT NOT NULL, received_at TEXT NOT NULL);
             INSERT INTO _schema_migrations(version,applied_at) VALUES(5,datetime('now'));",
         )?;
+    }
+    if current_version < 6 {
+        conn.execute_batch(include_str!("evidence.sql"))?;
+        // Existing event IDs are idempotent. Replay available originals to fill
+        // the new archive; user reviews and all old events remain untouched.
+        conn.execute("DELETE FROM source_files", [])?;
     }
     tx.commit()
 }
@@ -309,7 +315,7 @@ mod tests {
             conn.query_row("SELECT MAX(version) FROM _schema_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            5
+            6
         );
     }
     #[test]

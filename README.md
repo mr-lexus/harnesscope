@@ -2,6 +2,12 @@
 
 > **A local retrospective workspace for AI coding workflows.**
 
+**Retrospective evidence:** the Evidence panel adds sanitized observations, task
+timelines, human outcomes, workflow versions/diffs, portable exports and read-only
+MCP. Codex hooks and local OTLP/HTTP JSON complement native history. See the
+[setup/API guide](docs/EVIDENCE.md) and [capability matrix](docs/CAPABILITIES.md).
+Codex GUI on macOS is the primary target; real GUI acceptance is still pending.
+
 Harnesscope observes agent process runs, stores evidence locally in SQLite, and helps you review outcomes and compare workflow experiments. Use the built-in wrappers for Codex, Copilot and OpenCode, `run` for any executable, or the normalized event API/JSONL importer for custom adapters. No LLM calls are made by Harnesscope.
 
 **Observation is explicit:** a wrapper records a process lifetime (`PROCESS`), not each turn inside it. `TURN` records require an adapter with actual turn boundaries. A successful exit is separate from a human-accepted result. GUI launchers may detach before their editor session ends.

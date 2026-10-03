@@ -15,6 +15,18 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Observe Codex hooks without changing agent decisions
+    Capture {
+        #[command(subcommand)]
+        action: CaptureAction,
+    },
+    /// Inspect, replay and export sanitized evidence
+    Evidence {
+        #[command(subcommand)]
+        action: EvidenceAction,
+    },
+    /// Read-only MCP server over stdio (existing schema v6 database required)
+    Mcp,
     /// Run Codex CLI transparently through Harnesscope wrapper
     Codex {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -96,6 +108,50 @@ pub enum Commands {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum CaptureAction {
+    /// Read hook JSON from stdin, sanitize before durable queueing; always exit successfully
+    Hook {
+        #[arg(long)]
+        database: Option<std::path::PathBuf>,
+    },
+    /// Print hook configuration for review and native Codex trust
+    Config,
+    /// Merge local hooks; add local JSON OTel only if no OTel configuration exists
+    Setup {
+        #[arg(long)]
+        codex_home: std::path::PathBuf,
+        #[arg(long)]
+        remove: bool,
+    },
+    /// Retry pending sanitized hook observations
+    Drain,
+    /// Register a project/user workflow root and capture current versions
+    Workflow { path: std::path::PathBuf },
+}
+#[derive(Subcommand, Debug)]
+pub enum EvidenceAction {
+    Coverage,
+    Reindex,
+    /// JSONL package with a frozen cutoff; never overwrites the destination
+    Export {
+        #[arg(long)]
+        output: std::path::PathBuf,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        until: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+    },
+    /// Read observations from a previously exported portable package
+    Import {
+        path: std::path::PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum ServerAction {
     /// Check whether Harnesscope server is currently running
     Status,
@@ -123,7 +179,7 @@ pub enum SourceAction {
     AddCodex {
         #[arg(long)]
         path: std::path::PathBuf,
-        /// Store redacted prompt summaries and error messages; default is metadata only
+        /// Archive full sanitized observations; secrets and unsafe content are excluded
         #[arg(long)]
         include_content: bool,
     },

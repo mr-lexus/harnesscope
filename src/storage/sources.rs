@@ -34,6 +34,26 @@ pub struct SourceFile {
 }
 
 impl Repository {
+    pub fn source_policy_matches(&self, id: &str, content: bool) -> Result<bool> {
+        self.db.with_conn(|c|c.query_row("SELECT EXISTS(SELECT 1 FROM telemetry_sources WHERE id=?1 AND enabled=1 AND include_content=?2)",params![id,content],|r|r.get(0)))
+    }
+    pub fn update_source_policy(
+        &self,
+        id: &str,
+        enabled: Option<bool>,
+        content: Option<bool>,
+    ) -> Result<bool> {
+        self.transaction(||self.db.with_conn(|c|{
+            let old:Option<bool>=c.query_row("SELECT include_content FROM telemetry_sources WHERE id=?1",[id],|r|r.get(0)).optional()?;
+            let Some(old)=old else{return Ok(false)};
+            c.execute("UPDATE telemetry_sources SET enabled=COALESCE(?2,enabled),include_content=COALESCE(?3,include_content) WHERE id=?1",params![id,enabled,content])?;
+            if content.is_some_and(|v|v!=old){
+                c.execute("DELETE FROM source_files WHERE source_id=?1",[id])?;
+                c.execute("DELETE FROM evidence_cursors WHERE source=?1",[id])?;
+            }
+            Ok(true)
+        }))
+    }
     pub fn add_source(
         &self,
         path: &std::path::Path,
@@ -51,7 +71,12 @@ impl Repository {
             .to_string();
         let source = TelemetrySource {
             id: format!("src_{}", crate::redact::sha256_digest(&path)),
-            adapter: "codex-rollout/v1".into(),
+            adapter: if path.ends_with(".sqlite") {
+                "codex-sqlite/v1"
+            } else {
+                "codex-rollout/v1"
+            }
+            .into(),
             path,
             enabled: true,
             include_content,

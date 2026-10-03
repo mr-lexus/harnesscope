@@ -63,7 +63,8 @@ pub async fn add(State(state): State<AppState>, Json(input): Json<AddSource>) ->
 
 #[derive(Deserialize)]
 pub struct SetEnabled {
-    enabled: bool,
+    enabled: Option<bool>,
+    include_content: Option<bool>,
 }
 
 pub async fn update(
@@ -71,8 +72,12 @@ pub async fn update(
     Path(id): Path<String>,
     Json(input): Json<SetEnabled>,
 ) -> impl IntoResponse {
-    match tokio::task::spawn_blocking(move || state.repo.set_source_enabled(&id, input.enabled))
-        .await
+    match tokio::task::spawn_blocking(move || {
+        state
+            .repo
+            .update_source_policy(&id, input.enabled, input.include_content)
+    })
+    .await
     {
         Ok(Ok(true)) => (StatusCode::OK, Json(json!({"status":"saved"}))),
         Ok(Ok(false)) => (

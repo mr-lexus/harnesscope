@@ -13,6 +13,28 @@ use super::static_files::static_handler;
 pub fn build_router(state: AppState) -> Router {
     let api_router = Router::new()
         .route("/health", get(health_handler))
+        .route("/evidence", get(super::evidence::page))
+        .route("/evidence/context", get(super::evidence::context))
+        .route("/evidence/coverage", get(super::evidence::coverage))
+        .route("/evidence/export", get(super::evidence::export))
+        .route("/evidence/diff", get(super::evidence::diff))
+        .route("/evidence/objects/:hash", get(super::evidence::object))
+        .route(
+            "/evidence/objects/:hash/pages",
+            get(super::evidence::object_page),
+        )
+        .route(
+            "/tasks",
+            get(super::evidence::tasks).post(super::evidence::create_task),
+        )
+        .route("/tasks/:id", get(super::evidence::task))
+        .route("/tasks/:id/links", post(super::evidence::link_task))
+        .route("/tasks/:id/marks", post(super::evidence::mark_task))
+        .route(
+            "/workflow",
+            get(super::evidence::workflows).post(super::evidence::add_workflow),
+        )
+        .route("/capture/hooks", post(super::evidence::hook))
         .route("/collection", get(super::sources::collection))
         .route("/monitoring", get(super::monitoring::status))
         .route("/outbox/retry", post(super::monitoring::retry))
@@ -44,6 +66,8 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .nest("/api/v1", api_router)
+        .route("/v1/logs", post(super::evidence::otlp))
+        .route("/v1/traces", post(super::evidence::otlp))
         .fallback(static_handler)
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(middleware::from_fn(local_requests_only))

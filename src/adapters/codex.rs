@@ -18,6 +18,22 @@ pub struct CodexState {
     pending_context: Option<Value>,
     last_total: Option<TokenUsage>,
     turn_index: i32,
+    #[serde(default)]
+    sensitive_calls: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    known_calls: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    sensitive_processes: std::collections::BTreeSet<String>,
+    #[serde(default)]
+    source_version: Option<String>,
+    #[serde(default)]
+    fork_parent: Option<String>,
+    #[serde(default)]
+    fork_time: Option<i64>,
+    #[serde(default)]
+    inherited_parent: bool,
+    #[serde(default)]
+    inherited_turn: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +60,107 @@ pub fn execution_id(session: &str, turn: &str) -> String {
 }
 
 impl CodexState {
+    fn child_boundary(&self, record: &Value) -> bool {
+        let p = &record["payload"];
+        p["thread_id"]
+            .as_str()
+            .is_some_and(|id| self.session.as_deref() == Some(id))
+            || (record["type"] == "event_msg"
+                && matches!(p["type"].as_str(), Some("task_started" | "turn_started"))
+                && p["turn_id"].is_string()
+                && p["started_at"]
+                    .as_i64()
+                    .zip(self.fork_time)
+                    .is_some_and(|(start, fork)| start >= fork))
+    }
+    pub fn observation(
+        &mut self,
+        source: &str,
+        position: &str,
+        record: &Value,
+        include_content: bool,
+    ) -> (
+        crate::capture::ObservationInput,
+        crate::capture::SafeContent,
+    ) {
+        let mut input = crate::capture::from_record("codex_jsonl", source, position, record);
+        let p = &record["payload"];
+        let item = p.get("item").unwrap_or(p);
+        let call = item["call_id"].as_str().or(item["tool_use_id"].as_str());
+        let mut safe = crate::capture::sanitize(record);
+        let args = item.get("arguments").cloned().unwrap_or(Value::Null);
+        let args = if let Some(text) = args.as_str() {
+            serde_json::from_str(text).unwrap_or(Value::Null)
+        } else {
+            args
+        };
+        if let Some(handle) = args.get("session_id") {
+            if self
+                .sensitive_processes
+                .contains(&sha256_digest(&handle.to_string()))
+            {
+                safe = crate::capture::SafeContent::excluded("secret_related_process_output");
+            }
+        }
+        if let Some(call) = call {
+            let call_hash = sha256_digest(call);
+            let is_result = item.get("output").is_some() || item.get("tool_response").is_some();
+            if !is_result {
+                self.known_calls.insert(call_hash.clone());
+            }
+            if is_result && !self.known_calls.contains(&call_hash) {
+                safe = crate::capture::SafeContent::excluded("unpaired_tool_output");
+            }
+            if safe.value().is_none() {
+                self.sensitive_calls
+                    .insert(crate::redact::sha256_digest(call));
+            }
+            if self
+                .sensitive_calls
+                .contains(&crate::redact::sha256_digest(call))
+            {
+                safe = crate::capture::SafeContent::excluded("secret_related_tool_call");
+                if let Some(output) = item["output"].as_str() {
+                    static HANDLE: std::sync::LazyLock<regex::Regex> =
+                        std::sync::LazyLock::new(|| {
+                            regex::Regex::new(r"(?i)session (?:ID|id:)\s*(\d+)").unwrap()
+                        });
+                    for hit in HANDLE.captures_iter(output) {
+                        self.sensitive_processes.insert(sha256_digest(&hit[1]));
+                    }
+                }
+            }
+        }
+        if record["type"] == "session_meta" {
+            input.session_id = p["id"].as_str().map(crate::capture::metadata);
+            if self.session.is_none() || p["id"].as_str() == self.session.as_deref() {
+                self.source_version = input.source_version.clone();
+            }
+        } else {
+            input.session_id = input.session_id.or_else(|| {
+                if self.inherited_parent && !self.child_boundary(record) {
+                    self.fork_parent.clone()
+                } else {
+                    self.session.clone()
+                }
+            });
+        }
+        input.source_version = input.source_version.or_else(|| self.source_version.clone());
+        input.turn_id = input.turn_id.or_else(|| {
+            if self.inherited_parent && !self.child_boundary(record) {
+                self.inherited_turn.clone()
+            } else {
+                self.active.as_ref().map(|a| a.id.clone())
+            }
+        });
+        input.project = input
+            .project
+            .or_else(|| (!self.cwd.is_empty()).then(|| self.cwd.clone()));
+        if !include_content {
+            safe = crate::capture::SafeContent::excluded("metadata_only_policy");
+        }
+        (input, safe)
+    }
     fn event(
         &self,
         timestamp: &str,
@@ -74,6 +191,19 @@ impl CodexState {
     }
 
     pub fn convert(&mut self, record: &Value, include_content: bool) -> Result<Converted, String> {
+        // Paginated history embeds the same response item as legacy rollouts.
+        // Keep its native call ID so replayed representations deduplicate.
+        if record["type"] == "item_completed"
+            || (record["type"] == "event_msg" && record["payload"]["type"] == "item_completed")
+        {
+            let mut normalized = record.clone();
+            normalized["type"] = json!("response_item");
+            normalized["payload"] = record["payload"]
+                .get("item")
+                .cloned()
+                .unwrap_or_else(|| record["payload"].clone());
+            return self.convert(&normalized, include_content);
+        }
         let timestamp = record["timestamp"]
             .as_str()
             .ok_or("Record has no timestamp")?;
@@ -91,14 +221,29 @@ impl CodexState {
                 .filter(|s| !s.is_empty() && s.len() <= 256)
                 .ok_or("session_meta requires thread id")?;
             if self.session.as_deref().is_some_and(|s| s != native) {
+                if self.fork_parent.as_deref() == Some(native) {
+                    self.inherited_parent = true;
+                    return Ok(Converted {
+                        events,
+                        ignored: false,
+                    });
+                }
                 return Err("Thread identity changed inside one rollout".into());
             }
             if self.session.is_some() {
+                self.inherited_parent = false;
                 // Repeated metadata is not a new session. In particular it must
                 // not reset the cumulative usage baseline or an active turn.
                 return Ok(Converted { events, ignored });
             }
             self.session = Some(native.into());
+            self.fork_parent = p["forked_from_id"]
+                .as_str()
+                .or(p["parent_thread_id"].as_str())
+                .map(str::to_owned);
+            self.fork_time = chrono::DateTime::parse_from_rfc3339(timestamp)
+                .ok()
+                .map(|t| t.timestamp());
             self.cwd = p["cwd"].as_str().unwrap_or("").chars().take(4096).collect();
             // A fork/paginated prefix can inherit earlier cumulative usage. Do not
             // charge inherited tokens to its first observed turn.
@@ -130,6 +275,22 @@ impl CodexState {
         }
         if self.session.is_none() {
             return Err("First record must be session_meta with a thread id".into());
+        }
+        if self.inherited_parent {
+            if self.child_boundary(record) {
+                self.inherited_parent = false;
+                self.inherited_turn = None;
+                self.active = None;
+                self.last_total = None;
+            } else {
+                if matches!(p["type"].as_str(), Some("task_started" | "turn_started")) {
+                    self.inherited_turn = p["turn_id"].as_str().map(str::to_owned);
+                }
+                return Ok(Converted {
+                    events,
+                    ignored: true,
+                });
+            }
         }
         match kind {
             "turn_context" => {

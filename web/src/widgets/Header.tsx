@@ -18,7 +18,7 @@ export function Header() {
     <a className="skip-link" href="#main">Skip to content</a>
     <NavLink to="/" className="brand"><IconTelescope size={22}/><span>Harnesscope</span></NavLink>
     <nav className="primary-nav" aria-label="Main navigation">
-      {[['/','Overview'],['/executions','Executions'],['/sessions','Sessions'],['/monitoring','Monitor'],['/sources','Sources'],['/stats','Stats']].map(([to,label]) =>
+      {[['/','Overview'],['/executions','Executions'],['/sessions','Sessions'],['/evidence','Evidence'],['/monitoring','Monitor'],['/sources','Sources'],['/stats','Stats']].map(([to,label]) =>
         <NavLink key={to} to={to} end={to==='/'}>{label}</NavLink>)}
     </nav>
     <Group className="header-tools" gap={6} wrap="nowrap">

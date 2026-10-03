@@ -135,6 +135,10 @@ pub fn redact_secrets(input: &str) -> String {
         .replace_all(&result, "${1}[REDACTED_SECRET]")
         .into_owned();
     result = AUTH.replace_all(&result, REDACTED).into_owned();
+    static EXTRA: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?:AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap()
+    });
+    result = EXTRA.replace_all(&result, REDACTED).into_owned();
 
     // Redact specific known token prefixes
     for (i, re) in SECRET_PATTERNS.iter().enumerate() {

@@ -63,13 +63,13 @@ An unfinished UTF-8 character in the final line is safe: no decoding or offset a
 
 The collector checks full consumed-prefix SHA-256 when file size/mtime changes. Unchanged size/mtime is an optimization, not protection against malicious filesystem tampering. It refuses truncation or prefix changes; it does not overwrite historical telemetry. Restore the original file or inspect a separate corrected copy. A corrected copy still cannot replace events that already have accepted IDs.
 
-Limits: 32 MiB per JSONL line, 256 MiB per file, 10,000 matched rollouts / 100,000 directory entries per registered tree. Choose a narrower directory if limits are exceeded. Child symlinks and Windows reparse points are skipped. Compressed rollouts are not supported. Synthetic event/queue benchmarks are in PERFORMANCE.ru.md. A real 288-file Codex archive was also connected during local installation; older mixed-thread fork files remain unsupported.
+Limits: 32 MiB per JSONL line; no 256 MiB whole-file cap. Batches contain at most 200 records / roughly 8 MiB (one larger record allowed). Tree limits remain 10,000 rollouts / 100,000 entries. Child symlinks and Windows reparse points are skipped. JSONL and gzip JSONL are supported. Verified fork-parent prefixes are preserved without charging inherited turns to the child; ambiguous boundaries remain limited. See [CAPABILITIES.md](CAPABILITIES.md) for the authoritative support matrix.
 
 ## Privacy
 
 Default collection is **metadata only**: thread and turn IDs, timestamps, initial cwd, model/effort, tool names/call IDs, outcomes and token counters. Raw user/assistant messages, instructions, reasoning text, tool arguments and tool outputs are not copied.
 
-The optional **Include redacted prompt summaries and error messages** setting (`--include-content`) stores up to 200 characters of user-message summary and up to 1,000 characters of terminal error text after best-effort redaction. Tool content and instructions remain excluded. This policy is fixed per registration, and changing it does not rewrite accepted events. Existing metadata, paths and identifiers can still be sensitive.
+The **Collect full sanitized evidence** setting (`--include-content`) now archives available messages, instructions, arguments, results and context separately from legacy summaries. Secret-file/opaque content is excluded with a reason. In Sources, changing policy resets the checkpoint to replay available originals; existing events/reviews remain unchanged. Metadata can still be sensitive. Read the privacy limitations in [CAPABILITIES.md](CAPABILITIES.md) before enabling content.
 
 ## Evidence and format support
 

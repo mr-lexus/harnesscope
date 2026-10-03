@@ -2,7 +2,7 @@ import { useRefreshInterval } from '../../shared/preferences';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Badge, Button, Card, Checkbox, Code, Container, Drawer, Group, Loader, Progress, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { addSource, fetchSources, fetchCollection, collectionLabel, removeSource, setSourceEnabled } from '../../shared/api/sources';
+import { addSource, fetchSources, fetchCollection, collectionLabel, removeSource, setSourceEnabled, setSourceContent } from '../../shared/api/sources';
 
 const date = (value: string | null) => value ? new Date(value).toLocaleString() : 'Not yet';
 const sourcePath = (value: string) => value.replace(/^\\\\\?\\/, '');
@@ -25,7 +25,8 @@ export function SourcesPage() {
     onSuccess: refresh,
   });
   const remove = useMutation({ mutationFn: removeSource, onSuccess: refresh });
-  const error = query.error ?? add.error ?? change.error ?? remove.error;
+  const policy = useMutation({mutationFn:({id,content}:{id:string;content:boolean})=>setSourceContent(id,content),onSuccess:refresh});
+  const error = query.error ?? add.error ?? change.error ?? remove.error ?? policy.error;
 
   return <Container fluid className="panel-page">
     <div className="page-heading"><div><Title order={2}>Sources</Title><Text size="sm" c="dimmed">Native turns, tool calls and token usage. Checkpoints survive server restarts.</Text></div><Button size="xs" onClick={()=>setAdding(true)}>Add source</Button></div>
@@ -37,15 +38,15 @@ export function SourcesPage() {
         <Stack>
           <Title order={3}>Add a Codex source</Title>
           <Text size="sm" c="dimmed">
-            Choose one rollout file or a directory containing rollout-*.jsonl files. Use an absolute path on this computer.
+            Choose a rollout JSONL/gzip file, a directory of rollouts, or thread_history_1.sqlite. Use an absolute path on this computer.
             A typical directory is <Code>~/.codex/sessions</Code>; expand ~ to your home directory.
             Existing history and future appended records will be imported.
           </Text>
           {collection.data?.detected_codex_path && <Button variant="light" size="xs" onClick={()=>setPath(collection.data!.detected_codex_path!)}>Use detected Codex folder</Button>}
           <TextInput label="File or directory path" placeholder="Absolute path to a Codex rollout or sessions directory"
             value={path} onChange={event => setPath(event.currentTarget.value)} required />
-          <Checkbox label="Include redacted prompt summaries and error messages"
-            description="Off by default. Tool arguments, tool outputs, instructions and reasoning text are never copied."
+          <Checkbox label="Collect full sanitized evidence"
+            description="Archive available prompts, instructions, tool arguments and results. Secrets, credential files and unsafe content are excluded. Existing history will be imported."
             checked={content} onChange={event => setContent(event.currentTarget.checked)} />
           <Group><Button type="submit" loading={add.isPending} disabled={!path.trim()}>Connect source</Button>
             <Text size="xs" c="dimmed">Local files only · no model calls</Text></Group>
@@ -68,16 +69,17 @@ export function SourcesPage() {
         return <Card withBorder radius="md" key={source.id}>
           <Group justify="space-between" align="flex-start" wrap="wrap">
             <Stack gap={4} style={{ minWidth: 'min(100%, 320px)', flex: 1 }}>
-              <Group><Title order={3}>Codex rollouts</Title>
+              <Group><Title order={3}>{source.adapter === 'codex-sqlite/v1' ? 'Codex SQLite history' : 'Codex rollouts'}</Title>
                 <Badge color={!source.enabled ? 'gray' : source.last_error ? 'red' : stale ? 'orange' : 'teal'}>
                   {!source.enabled ? 'Paused' : source.last_error ? 'Needs attention' : stale ? 'Scan overdue' : !source.last_scan_at ? 'Starting' : pending ? 'Importing history' : 'Collecting'}
                 </Badge>
-                <Badge variant="outline">{source.include_content ? 'Summaries included' : 'Metadata only'}</Badge>
+                <Badge variant="outline">{source.include_content ? 'Sanitized evidence' : 'Metadata only'}</Badge>
               </Group>
               <Text size="sm" style={{ overflowWrap: 'anywhere' }}>{sourcePath(source.path)}</Text>
               <Text size="xs" c="dimmed">Last scan: {date(source.last_scan_at)} · Last successful scan: {date(source.last_success_at)}</Text>
             </Stack>
             <Group gap="xs">
+              <Button size="xs" variant="subtle" disabled={policy.isPending} onClick={()=>policy.mutate({id:source.id,content:!source.include_content})}>{source.include_content ? 'Use metadata only' : 'Enable evidence & replay'}</Button>
               <Button size="xs" variant="light" disabled={change.isPending}
                 onClick={() => change.mutate({ id: source.id, enabled: !source.enabled })}>{source.enabled ? 'Pause' : 'Resume'}</Button>
               <Button size="xs" color="gray" variant="subtle" disabled={remove.isPending}

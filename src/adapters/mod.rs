@@ -1,4 +1,5 @@
 pub mod codex;
+pub mod codex_sqlite;
 
 use crate::{
     server::correlation::CorrelationEngine,
@@ -18,7 +19,6 @@ use std::{
 
 const MAX_FILES: usize = 10_000;
 const MAX_LINE: u64 = 32 * 1024 * 1024;
-const MAX_FILE: u64 = 256 * 1024 * 1024;
 const RECORDS_PER_BATCH: usize = 200;
 const BATCHES_PER_SCAN: usize = 10;
 
@@ -64,7 +64,8 @@ fn discover(root: &Path) -> Result<Vec<PathBuf>, String> {
             if kind.is_dir() {
                 dirs.push(path);
             } else if kind.is_file()
-                && path.extension().is_some_and(|e| e == "jsonl")
+                && (path.extension().is_some_and(|e| e == "jsonl")
+                    || entry.file_name().to_string_lossy().ends_with(".jsonl.gz"))
                 && entry.file_name().to_string_lossy().starts_with("rollout-")
             {
                 files.push(path);
@@ -78,20 +79,27 @@ fn discover(root: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
-fn parse_batch(
-    source: &TelemetrySource,
-    previous: &SourceFile,
-) -> Result<(SourceFile, Vec<crate::domain::events::IngestEvent>), String> {
+type Captured = (
+    crate::capture::ObservationInput,
+    crate::capture::SafeContent,
+);
+type ParsedBatch = (
+    SourceFile,
+    Vec<crate::domain::events::IngestEvent>,
+    Vec<Captured>,
+);
+fn parse_batch(source: &TelemetrySource, previous: &SourceFile) -> Result<ParsedBatch, String> {
     let file = File::open(&previous.path).map_err(|_| "Cannot open source file")?;
     let metadata = file.metadata().map_err(|_| "Cannot inspect source file")?;
     if !metadata.is_file() {
         return Err("Source is no longer a regular file".into());
     }
     let size = metadata.len();
-    if size > MAX_FILE {
-        return Err("Rollout exceeds 256 MiB; import a smaller supported rollout".into());
+    let compressed = previous.path.ends_with(".jsonl.gz");
+    if !previous.path.ends_with(".jsonl") && !compressed {
+        return Err("Unsupported history format; supported: JSONL and gzip JSONL".into());
     }
-    if size < previous.byte_offset {
+    if !compressed && size < previous.byte_offset {
         return Err("Source was truncated; checkpoint retained. Restore the original file or register a separate copy.".into());
     }
     let modified = metadata
@@ -105,9 +113,14 @@ fn parse_batch(
         && !modified.is_empty()
         && matches!(previous.status.as_str(), "READY" | "WAITING")
     {
-        return Ok((previous.clone(), Vec::new()));
+        return Ok((previous.clone(), Vec::new(), Vec::new()));
     }
-    let mut reader = BufReader::new(file);
+    let input: Box<dyn Read> = if compressed {
+        Box::new(flate2::read::MultiGzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+    let mut reader = BufReader::new(input);
     let mut hash = Sha256::new();
     let mut remaining = previous.byte_offset;
     let mut buffer = [0u8; 64 * 1024];
@@ -134,7 +147,11 @@ fn parse_batch(
     next.status = "BACKLOG".into();
     next.last_error = None;
     let mut events = Vec::new();
+    let mut observations = Vec::new();
     for _ in 0..RECORDS_PER_BATCH {
+        if next.byte_offset.saturating_sub(previous.byte_offset) >= 8 * 1024 * 1024 {
+            break;
+        }
         let mut bytes = Vec::new();
         let count = reader
             .by_ref()
@@ -166,17 +183,28 @@ fn parse_batch(
                     next.line_number + 1
                 )
             })?;
+            let captured = state.observation(
+                &previous.path,
+                &next.byte_offset.to_string(),
+                &record,
+                source.include_content,
+            );
+            let clean = crate::redact::redact_value(&record);
             let converted = state
-                .convert(&record, source.include_content)
+                .convert(
+                    &clean,
+                    source.include_content && captured.1.value().is_some(),
+                )
                 .map_err(|e| format!("Line {}: {e}", next.line_number + 1))?;
             next.ignored_count += u64::from(converted.ignored);
             events.extend(converted.events);
+            observations.push(captured);
         }
         hash.update(&bytes);
         next.byte_offset += count as u64;
         next.line_number += 1;
     }
-    if next.byte_offset == size {
+    if !compressed && next.byte_offset == size {
         next.status = "READY".into();
     }
     next.prefix_hash = hex::encode(hash.finalize());
@@ -184,7 +212,7 @@ fn parse_batch(
         serde_json::to_string(&state).map_err(|_| "Cannot save adapter checkpoint")?;
     next.events_count += events.len() as u64;
     next.updated_at = chrono::Utc::now().to_rfc3339();
-    Ok((next, events))
+    Ok((next, events, observations))
 }
 
 /// One bounded pass. Files are the durable queue: offsets advance only in the
@@ -216,6 +244,9 @@ fn scan_source(
     source: &TelemetrySource,
     stop: &AtomicBool,
 ) -> Result<(), String> {
+    if source.adapter == "codex-sqlite/v1" {
+        return codex_sqlite::scan(repo, source);
+    }
     if source.adapter != "codex-rollout/v1" {
         return Err("Unsupported adapter checkpoint version".into());
     }
@@ -262,12 +293,18 @@ fn scan_source(
             ..Default::default()
         });
         match parse_batch(source, &previous) {
-            Ok((next, events)) => {
+            Ok((next, events, observations)) => {
                 if next.updated_at == previous.updated_at {
                     continue;
                 }
                 batches += 1;
                 if let Err(error) = engine.process_events_with(&events, || {
+                    if !repo.source_policy_matches(&source.id, source.include_content)? {
+                        return Err(rusqlite::Error::InvalidQuery);
+                    }
+                    for (input, safe) in &observations {
+                        repo.record_observation(input, safe)?;
+                    }
                     repo.save_source_file(&next, previous.byte_offset)
                 }) {
                     failures += 1;

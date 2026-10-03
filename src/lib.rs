@@ -11,4 +11,8 @@ pub mod storage;
 
 pub mod adapters;
 
+pub mod capture;
+pub mod capture_io;
+pub mod capture_setup;
+pub mod mcp;
 pub mod outbox;

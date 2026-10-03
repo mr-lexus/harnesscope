@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'codex/**' ]
   pull_request:
     branches: [ main ]
 
@@ -45,6 +45,10 @@ jobs:
 
       - name: Cargo Check
         run: cargo check --verbose
+
+      - name: macOS installer syntax
+        run: bash -n scripts/install-macos.sh
+        shell: bash
 
       - name: Formatting
         run: cargo fmt --all -- --check

@@ -8,4 +8,5 @@ pub use routes::build_router;
 
 pub mod sources;
 
+pub mod evidence;
 pub mod monitoring;
