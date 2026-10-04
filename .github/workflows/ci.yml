@@ -50,6 +50,9 @@ jobs:
         run: bash -n scripts/install-macos.sh
         shell: bash
 
+      - name: Homebrew packaging tests
+        run: python scripts/test_generate_homebrew.py
+
       - name: Formatting
         run: cargo fmt --all -- --check
 
@@ -62,3 +65,34 @@ jobs:
       - name: Frontend dependency audit
         run: npm audit --audit-level=high
         working-directory: web
+
+  binary-cask:
+    name: Binary cask on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Ruby definitions and register local tap
+        run: |
+          ruby -c Formula/harnesscope.rb
+          ruby -c Casks/harnesscope.rb
+          brew tap harnesscope/packaging-smoke "$GITHUB_WORKSPACE"
+      - name: Install binary without a usable Xcode developer directory
+        env:
+          DEVELOPER_DIR: /nonexistent/harnesscope-xcode-not-required
+        run: |
+          brew install --cask harnesscope/packaging-smoke/harnesscope
+          harnesscope --version
+          harnesscope --help
+      - name: Remove test cask
+        if: always()
+        run: |
+          if brew list --cask harnesscope/packaging-smoke/harnesscope >/dev/null 2>&1; then
+            brew uninstall --cask harnesscope/packaging-smoke/harnesscope
+          fi

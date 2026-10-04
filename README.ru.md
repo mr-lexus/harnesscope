@@ -18,11 +18,16 @@ Harnesscope записывает наблюдения о запусках аге
 
 ### Homebrew (macOS и Linux)
 ```bash
-brew install mr-lexus/tap/harnesscope
+# macOS: готовый бинарник, без обновления Xcode и локальной сборки
+brew install --cask mr-lexus/tap/harnesscope
+harnesscope server start
 
-# Опционально: автозапуск сервера как системного сервиса в фоне
+# Linux (или formula на macOS с совместимыми developer tools)
+brew install --formula mr-lexus/tap/harnesscope
 brew services start mr-lexus/tap/harnesscope
 ```
+
+Выберите один способ. [Переход, обновления и версии выпусков](docs/HOMEBREW.ru.md).
 
 ### Скрипт прямой установки
 ```bash

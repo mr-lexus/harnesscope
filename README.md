@@ -18,11 +18,16 @@ Harnesscope observes agent process runs, stores evidence locally in SQLite, and 
 
 ### Homebrew (macOS & Linux)
 ```bash
-brew install mr-lexus/tap/harnesscope
+# macOS: prebuilt binary, no Xcode upgrade or local compilation
+brew install --cask mr-lexus/tap/harnesscope
+harnesscope server start
 
-# Optional: run telemetry server automatically in background via system service
+# Linux (or the formula on macOS with compatible developer tools)
+brew install --formula mr-lexus/tap/harnesscope
 brew services start mr-lexus/tap/harnesscope
 ```
+
+Choose one method. See [migration, updates and published versions](docs/HOMEBREW.md).
 
 ### Direct Script Install
 ```bash

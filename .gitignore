@@ -27,3 +27,4 @@ Thumbs.db
 .audit/
 *.tsbuildinfo
 task-adapters.local/
+__pycache__/

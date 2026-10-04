@@ -167,60 +167,19 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: Harnesscope ${{ env.VERSION }}
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(env.VERSION, '-') }}
           files: |
             dist/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate Homebrew Formula
+      - name: Generate Homebrew formula and binary cask
         shell: bash
-        run: |
-          ARM64_MAC_SHA=$(sha256sum dist/*-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          INTEL_MAC_SHA=$(sha256sum dist/*-x86_64-apple-darwin.tar.gz | awk '{print $1}')
-          LINUX_SHA=$(sha256sum dist/*-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+        run: python3 scripts/generate-homebrew.py --version "$VERSION" --checksums dist/checksums.txt
 
-          cat <<EOF > Formula/harnesscope.rb
-          class Harnesscope < Formula
-            desc "Local cross-platform telemetry utility for AI coding agents"
-            homepage "https://github.com/mr-lexus/harnesscope"
-            license "MIT"
-
-            if OS.mac?
-              if Hardware::CPU.arm?
-                url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-aarch64-apple-darwin.tar.gz"
-                sha256 "${ARM64_MAC_SHA}"
-              else
-                url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-x86_64-apple-darwin.tar.gz"
-                sha256 "${INTEL_MAC_SHA}"
-              end
-            else
-              url "https://github.com/mr-lexus/harnesscope/releases/download/${VERSION}/harnesscope-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-              sha256 "${LINUX_SHA}"
-            end
-
-            def install
-              bin.install "harnesscope"
-            end
-
-            service do
-              run [opt_bin/"harnesscope", "serve"]
-              keep_alive true
-              log_path var/"log/harnesscope.log"
-              error_log_path var/"log/harnesscope.error.log"
-            end
-
-            test do
-              assert_match version.to_s, shell_output("#{bin}/harnesscope --version")
-              assert_match "Harnesscope", shell_output("#{bin}/harnesscope --help")
-            end
-          end
-          EOF
-          sed -i 's/^          //' Formula/harnesscope.rb
-          cat Formula/harnesscope.rb
-
-      - name: Update Homebrew Tap (if PAT configured)
+      - name: Update Homebrew Tap (stable releases, if PAT configured)
+        if: ${{ !contains(env.VERSION, '-') }}
         shell: bash
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || secrets.GH_PAT }}
@@ -232,9 +191,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git clone https://x-access-token:${TAP_TOKEN}@github.com/mr-lexus/homebrew-tap.git tap-repo
+          mkdir -p tap-repo/Formula tap-repo/Casks
           cp Formula/harnesscope.rb tap-repo/Formula/harnesscope.rb
+          cp Casks/harnesscope.rb tap-repo/Casks/harnesscope.rb
           cd tap-repo
-          git add Formula/harnesscope.rb
+          git add Formula/harnesscope.rb Casks/harnesscope.rb
           git commit -m "Update harnesscope formula to ${VERSION}" || echo "No changes"
           git push origin main
 
