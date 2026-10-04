@@ -118,6 +118,7 @@ repository. Start with `examples/task-adapter.json`, then run
 
 ## Documentation
 
+- **Current candidate:** [v0.3.0-rc.2 release notes and installation](docs/RELEASE.md)
 - **Install and run:** [Homebrew](docs/HOMEBREW.md) · [Daily use](docs/RUNNING.md) · [Platforms and GUI](docs/CROSS_PLATFORM.md)
 - **Collection:** [Setup, API and MCP](docs/EVIDENCE.md) · [Codex history](docs/NATIVE_SOURCES.md) · [Capabilities and limits](docs/CAPABILITIES.md)
 - **Integrations:** [Agent events](docs/EVENTS.md) · [Task tracker adapters](docs/TASK_ADAPTERS.md)

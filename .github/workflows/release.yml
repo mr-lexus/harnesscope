@@ -31,7 +31,7 @@ jobs:
             archive_format: tar.gz
             bin_name: harnesscope
 
-          - os: macos-26-intel
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             archive_format: tar.gz
             bin_name: harnesscope
@@ -61,6 +61,21 @@ jobs:
           fi
           echo "VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
 
+      - name: Verify package versions match the release tag
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, tomllib
+          version = os.environ["VERSION"].removeprefix("v")
+          cargo = tomllib.loads(pathlib.Path("Cargo.toml").read_text())["package"]["version"]
+          web = json.loads(pathlib.Path("web/package.json").read_text())["version"]
+          if cargo != version or web != version:
+              raise SystemExit(f"Release {version} does not match Cargo {cargo} / web {web}")
+          for name in ("docs/RELEASE.md", "docs/RELEASE.ru.md"):
+              if pathlib.Path(name).read_text(encoding="utf-8").splitlines()[0] != f"# Harnesscope v{version}":
+                  raise SystemExit(f"Update {name} for v{version} before releasing")
+          PY
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -82,7 +97,14 @@ jobs:
       - name: Build binary
         shell: bash
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke test the release binary
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/${{ matrix.bin_name }}"
+          test "$("$BINARY" --version)" = "harnesscope ${VERSION#v}"
+          "$BINARY" --help
 
       - name: Package artifact (Unix)
         if: matrix.archive_format == 'tar.gz'
@@ -90,7 +112,9 @@ jobs:
         run: |
           ARCHIVE_NAME="harnesscope-${{ env.VERSION }}-${{ matrix.target }}.tar.gz"
           cp target/${{ matrix.target }}/release/${{ matrix.bin_name }} ./
-          tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md
+          tar -czf "$ARCHIVE_NAME" ${{ matrix.bin_name }} README.md README.ru.md docs \
+            examples/events.jsonl examples/task-adapter.json install.sh install.ps1 \
+            scripts/install-macos.sh scripts/install-local.ps1
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
           else
@@ -103,8 +127,13 @@ jobs:
         run: |
           $ver = "${{ env.VERSION }}"
           $archive = "harnesscope-$ver-${{ matrix.target }}.zip"
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "./${{ matrix.bin_name }}"
-          Compress-Archive -Path "${{ matrix.bin_name }}", "README.md" -DestinationPath $archive -Force
+          New-Item -ItemType Directory -Path package, package/examples, package/scripts | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" package/
+          Copy-Item README.md, README.ru.md, install.sh, install.ps1 package/
+          Copy-Item docs package/ -Recurse
+          Copy-Item examples/events.jsonl, examples/task-adapter.json package/examples/
+          Copy-Item scripts/install-macos.sh, scripts/install-local.ps1 package/scripts/
+          Compress-Archive -Path package/* -DestinationPath $archive
           $hash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
           "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
 
@@ -161,6 +190,18 @@ jobs:
           cat checksums.txt
           cd ..
 
+      - name: Prepare release notes with tag-specific documentation links
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          from urllib.parse import urljoin
+          base = f"https://github.com/mr-lexus/harnesscope/blob/{os.environ['VERSION']}/docs/"
+          notes = pathlib.Path("docs/RELEASE.md").read_text(encoding="utf-8")
+          notes = re.sub(r"\]\(([^)]+)\)", lambda m: f"]({urljoin(base, m[1])})", notes)
+          pathlib.Path("release-notes.md").write_text(notes, encoding="utf-8")
+          PY
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
@@ -168,6 +209,7 @@ jobs:
           name: Harnesscope ${{ env.VERSION }}
           draft: false
           prerelease: ${{ contains(env.VERSION, '-') }}
+          body_path: release-notes.md
           files: |
             dist/*
           generate_release_notes: true

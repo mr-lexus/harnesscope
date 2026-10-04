@@ -65,9 +65,9 @@ execution/trust checks still apply; no Gatekeeper or developer settings are disa
 
 ### Published versions
 
-The checked-in cask/formula reference published **0.2.3**. The retrospective
-collector **0.3.0-rc.2** is development code, not yet a downloadable release.
-Installing the cask does not install unpublished features; never downgrade a
+The checked-in cask/formula reference stable **0.2.3**. The retrospective
+collector **0.3.0-rc.2** is distributed separately as a [prerelease](RELEASE.md).
+Installing the stable cask does not install the candidate; never downgrade a
 development database's collector. See [capabilities](CAPABILITIES.md).
 Release CI generates both definitions from `checksums.txt` using
 `scripts/generate-homebrew.py`; stable releases update both in the tap when its

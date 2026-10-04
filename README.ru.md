@@ -117,6 +117,7 @@ MCP трекера подключается к вашему агенту. Harnes
 
 ## Документация
 
+- **Текущий кандидат:** [Изменения и установка v0.3.0-rc.2](docs/RELEASE.ru.md)
 - **Установка и запуск:** [Homebrew](docs/HOMEBREW.ru.md) · [Ежедневная работа](docs/RUNNING.ru.md) · [Платформы и GUI](docs/CROSS_PLATFORM.ru.md)
 - **Сбор данных:** [Подключение, API и MCP](docs/EVIDENCE.ru.md) · [История Codex](docs/NATIVE_SOURCES.ru.md) · [Возможности и ограничения](docs/CAPABILITIES.ru.md)
 - **Интеграции:** [События агентов](docs/EVENTS.ru.md) · [Адаптеры трекеров задач](docs/TASK_ADAPTERS.ru.md)
