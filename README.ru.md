@@ -1,11 +1,13 @@
 # Harnesscope
 
+[English version](README.md)
+
 > **Локальная ретроспектива работы AI-агентов: наблюдение, оценка результата, улучшение workflow.**
 
 **Данные для ретроспективы:** вкладка Evidence показывает очищенные наблюдения,
 хронологию задач, оценки результата и версии workflow с различиями. Добавлены
 переносимый экспорт, read-only MCP, hooks Codex и локальный OTLP/HTTP JSON.
-См. [подключение и API](docs/EVIDENCE.md) и [матрицу возможностей](docs/CAPABILITIES.md).
+См. [подключение и API](docs/EVIDENCE.ru.md) и [матрицу возможностей](docs/CAPABILITIES.ru.md).
 Основная цель — Codex GUI на macOS; реальная приёмка на этой платформе ещё впереди.
 
 Harnesscope записывает наблюдения о запусках агентов в локальную SQLite-базу и помогает оценивать результаты и сравнивать эксперименты над workflow. Есть обёртки Codex/Copilot/OpenCode, универсальный `run` для других команд и импорт событий JSON/JSONL. Сам Harnesscope не вызывает LLM.
@@ -87,7 +89,7 @@ harnesscope doctor
 harnesscope ingest --file events.jsonl
 ```
 
-Импорт принимает наш общий формат событий, а не произвольные логи поставщика. См. [контракт интеграции](docs/EVENTS.md) и [пример](examples/events.jsonl).
+Импорт принимает наш общий формат событий, а не произвольные логи поставщика. См. [контракт интеграции](docs/EVENTS.ru.md) и [пример](examples/events.jsonl).
 
 ### 4. Загрузка демо-данных (опционально)
 ```bash
@@ -115,22 +117,11 @@ MCP трекера подключается к вашему агенту. Harnes
 
 ## Документация
 
-- [Подключение MCP трекера задач через локальный адаптер](docs/TASK_ADAPTERS.md)
-
-- [Аудит, исправления и ограничения](docs/AUDIT.ru.md)
-- [Направление продукта и конкуренты](docs/PRODUCT.ru.md)
-- [Контракт интеграции с агентами](docs/EVENTS.md)
-
-- [Архитектура системы](docs/ARCHITECTURE.md)
-- [Руководство по Homebrew](docs/HOMEBREW.ru.md)
-- [Кроссплатформенность и запуск GUI](docs/CROSS_PLATFORM.ru.md)
-- [Руководство разработчика (Русский)](docs/DEVELOPMENT.ru.md)
-- [README (English)](README.md)
-- [Homebrew Guide (English)](docs/HOMEBREW.md)
-- [Cross-Platform & GUI (English)](docs/CROSS_PLATFORM.md)
-- [Developer Guide (English)](docs/DEVELOPMENT.md)
-
-
+- **Установка и запуск:** [Homebrew](docs/HOMEBREW.ru.md) · [Ежедневная работа](docs/RUNNING.ru.md) · [Платформы и GUI](docs/CROSS_PLATFORM.ru.md)
+- **Сбор данных:** [Подключение, API и MCP](docs/EVIDENCE.ru.md) · [История Codex](docs/NATIVE_SOURCES.ru.md) · [Возможности и ограничения](docs/CAPABILITIES.ru.md)
+- **Интеграции:** [События агентов](docs/EVENTS.ru.md) · [Адаптеры трекеров задач](docs/TASK_ADAPTERS.ru.md)
+- **Надёжность:** [Доставка и мониторинг](docs/DELIVERY.ru.md) · [Резервные копии](docs/BACKUPS.ru.md) · [Производительность](docs/PERFORMANCE.ru.md) · [Приёмка](docs/ACCEPTANCE.ru.md)
+- **Разработка:** [Архитектура](docs/ARCHITECTURE.ru.md) · [Руководство разработчика](docs/DEVELOPMENT.ru.md) · [Направление продукта](docs/PRODUCT.ru.md) · [История аудита](docs/AUDIT.ru.md)
 
 ## Нативный сбор Codex
 
@@ -141,17 +132,17 @@ harnesscope sources add-codex --path /absolute/path/to/codex/sessions
 harnesscope serve
 ```
 
-[Инструкция, жизненный цикл и границы поддержки](docs/NATIVE_SOURCES.md). Для сравнения нативных turns выбирайте `TURN` в Overview.
+[Инструкция, жизненный цикл и границы поддержки](docs/NATIVE_SOURCES.ru.md). Для сравнения нативных turns выбирайте `TURN` в Overview.
 
 
 ### Доставка и мониторинг
 
-Обёртки сохраняют отредактированные события на диск до отправки и наблюдают дочерний процесс каждые 15 секунд. Сервер восстанавливает доставку после перезапуска. В компактной адаптивной панели появились Monitor, фильтры в URL, мобильные карточки и выбор плотности. См. [семантику heartbeat, команды восстановления и ограничения](docs/DELIVERY.md).
+Обёртки сохраняют отредактированные события на диск до отправки и наблюдают дочерний процесс каждые 15 секунд. Сервер восстанавливает доставку после перезапуска. В компактной адаптивной панели появились Monitor, фильтры в URL, мобильные карточки и выбор плотности. См. [семантику heartbeat, команды восстановления и ограничения](docs/DELIVERY.ru.md).
 
 
 ### Резервные копии и большие истории
 
-Команды: `harnesscope backup create --output snapshot.db`, `backup verify --file snapshot.db`, `backup restore --file snapshot.db --output restored.db`. Снимок учитывает WAL; восстановление всегда создаёт новый файл и ставит нативные сборщики на паузу. Ожидающие отправки события outbox, исходные логи и конфигурацию сохраняют отдельно. [Инструкция](docs/BACKUPS.md).
+Команды: `harnesscope backup create --output snapshot.db`, `backup verify --file snapshot.db`, `backup restore --file snapshot.db --output restored.db`. Снимок учитывает WAL; восстановление всегда создаёт новый файл и ставит нативные сборщики на паузу. Ожидающие отправки события outbox, исходные логи и конфигурацию сохраняют отдельно. [Инструкция](docs/BACKUPS.ru.md).
 
 Журнал загружается только при открытии Events, постранично и с поиском по всей истории. [Замеры на 10/100 тысячах событий, проверки восстановления и границы масштабирования](docs/PERFORMANCE.ru.md).
 

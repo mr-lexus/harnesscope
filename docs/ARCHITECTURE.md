@@ -1,5 +1,7 @@
 # Harnesscope Architecture
 
+[Documentation](../README.md#documentation)
+
 Harnesscope is a local, cross-platform telemetry utility for AI coding agents. It non-intrusively wraps agent command-line runners, captures execution and environment metadata deterministically without invoking any external language models, records the telemetry in a local SQLite database, and exposes the data via an embedded Web UI and HTTP API.
 
 ---
@@ -21,7 +23,7 @@ Future adapters ───┤
          └─ Embedded React Web UI (Mantine + TanStack Query)
 ```
 
-- **Single Writer Principle**: Agent CLI wrappers NEVER write directly to SQLite. They dispatch lightweight HTTP telemetry payloads to the local Harnesscope server.
+- **Single Writer Principle**: Agent CLI wrappers never write directly to the main database. They dispatch lightweight HTTP telemetry payloads to the local Harnesscope server.
 - **Fail-Safe Design**: If the Harnesscope server is unreachable or fails, the wrapper logs a non-intrusive warning and continues executing the user's agent command. Telemetry failure NEVER breaks the observed agent.
 - **Single Server Architecture**: The Axum server listens strictly on `localhost` (default port 4242). It manages transactions, enforces foreign key constraints, and serves both the API and the embedded single-page application (SPA).
 
@@ -76,7 +78,7 @@ Multiple agents, multiple sessions, and multiple executions can concurrently ope
 - **Zero Configuration**: Developers do not need to install or maintain Docker containers, PostgreSQL services, or background daemons.
 - **WAL Mode (Write-Ahead Logging)**: Enables concurrent readers and short sequential writes with `PRAGMA synchronous = NORMAL;` and `PRAGMA busy_timeout = 5000;`.
 - **Integrity**: Full ACID transactions and relational foreign key constraints prevent orphan records.
-- **Portability**: A single database file (`~/.harnesscope/harnesscope.db`) that can be inspected with standard SQLite tools, backed up, or deleted for a clean slate.
+- **Portability**: The main database can be inspected with standard SQLite tools. See the [developer guide](DEVELOPMENT.md) for platform-specific paths and [backups](BACKUPS.md) for portable snapshots including external evidence objects.
 
 ### When PostgreSQL Will Be Needed
 PostgreSQL is intentionally out of scope for the local MVP. It will become necessary when:
@@ -120,7 +122,7 @@ When multiple wrappers start at the exact same millisecond:
 
 ## Retrospective and event integrity
 
-Schema v3 adds persistent session aliases, execution capture scope and human reviews. Correlation deduplication, projection changes and raw event recording share one SQLite transaction. Batch delivery is per-event atomic; see [EVENTS.md](EVENTS.md). Human acceptance is independent from process exit status. Overview groups comparable scopes and excludes demo records by default. Current operational boundaries are listed in [AUDIT.ru.md](AUDIT.ru.md).
+Schema v3 adds persistent session aliases, execution capture scope and human reviews. Correlation deduplication, projection changes and raw event recording share one SQLite transaction. Batch delivery is per-event atomic; see [EVENTS.md](EVENTS.md). Human acceptance is independent from process exit status. Overview groups comparable scopes and excludes demo records by default. Current operational boundaries are listed in [AUDIT.md](AUDIT.md).
 
 
 ### Native source collection (schema v4)

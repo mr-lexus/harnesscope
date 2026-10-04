@@ -1,5 +1,7 @@
 # Capture capabilities and acceptance status
 
+[Documentation](../README.md#documentation)
+
 This is the canonical support matrix for retrospective evidence (schema 7,
 observation/package format 1). A platform CI pass is **not** proof of complete
 capture from a real Codex GUI. No retrospective analyzer skill is shipped here.

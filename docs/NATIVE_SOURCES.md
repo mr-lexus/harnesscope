@@ -1,6 +1,8 @@
 # Native Codex sources
 
-Harnesscope can incrementally read **plain Codex rollout JSONL** files. This adds native turn boundaries, per-turn model metadata, tool invocations, cancellation/failure outcomes and observed token counters. It does not run Codex or call a model API.
+[Documentation](../README.md#documentation)
+
+Harnesscope incrementally reads Codex history, adding native turn boundaries, per-turn model metadata, tool invocations, cancellation/failure outcomes and observed token counters. It does not run Codex or call a model API. The main walkthrough below uses rollout JSONL; gzip and selected SQLite history support are documented in the [capability matrix](CAPABILITIES.md).
 
 ## Connect a source
 
@@ -84,7 +86,7 @@ The adapter is `codex-rollout/v1`, with synthetic protocol fixtures in `tests/fi
 - Token coverage can be partial. Cache tokens are included in input; reasoning tokens are included in output. Values are not prices, subscription consumption or cost estimates. Modern `token_usage_record.turn_token_usage` supplies cumulative per-turn counters and takes precedence for that turn. Legacy counters are then tracked only as a baseline, never added again. A final modern sample may update the last completed turn. Records for an unknown turn or a different thread stay unmapped.
 - Unknown record/event types count as unmapped. Known message/output/compaction/world-state records and duplicate `item_completed` presentation records that are deliberately omitted do not. Unsupported required shapes produce a visible file error.
 - A transcript uses a synthetic `surface=transcript` observer with UNKNOWN process status and no PID. It is not counted as a live runtime and does not create live-worktree/concurrent-runtime conflicts. Wrapper `PROCESS` observations and native `TURN` observations remain separate; filter by scope when comparing experiments.
-- Native identity can bind to an already-known wrapper conversation. A known fork parent is linked; importing the parent later does not reconstruct lineage automatically. Inherited paginated history, legacy copied fork prefixes, compressed storage and rollback/retraction events are not reconstructed. Review unmapped counts before drawing conclusions.
+- Native identity can bind to an already-known wrapper conversation. A known fork parent is linked; importing the parent later does not reconstruct lineage automatically. Inherited-history coverage depends on the format and verified boundaries; rollback/retraction events are not reconstructed. Review unmapped counts and the capability matrix before drawing conclusions.
 - Historical imports do not run Git against today's checkout or attribute current changes to old turns. Overview's project filter falls back to the observer's **initial cwd** when no recorded repository root exists; subsequent cwd changes are only retained in turn context evidence.
 
 ## API additions
@@ -99,4 +101,4 @@ The adapter is `codex-rollout/v1`, with synthetic protocol fixtures in `tests/fi
 
 ## Next lifecycle work
 
-Process wrappers now use a separate durable outbox and heartbeat protocol; see [delivery and monitoring](DELIVERY.md). Native files provide restartable history collection, while Monitor reports wrapper observations. The Windows local installer supports explicit `-AutoStart` for user login startup and installs Start-menu open/stop controls. See [daily use](RUNNING.ru.md).
+Process wrappers now use a separate durable outbox and heartbeat protocol; see [delivery and monitoring](DELIVERY.md). Native files provide restartable history collection, while Monitor reports wrapper observations. The Windows local installer supports explicit `-AutoStart` for user login startup and installs Start-menu open/stop controls. See [daily use](RUNNING.md).

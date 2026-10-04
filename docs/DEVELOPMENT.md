@@ -1,5 +1,7 @@
 # Developer Guide (Harnesscope)
 
+[Documentation](../README.md#documentation)
+
 This document provides developer guidelines for building, testing, extending, and debugging Harnesscope.
 
 ---
@@ -188,4 +190,8 @@ To support a new AI coding agent (e.g. `cursor`, `aider`, `cline`):
    ```
 5. **Add parser unit tests** verifying argument parsing and config discovery.
 
-The normalized adapter event contract and review/report APIs are documented in [EVENTS.md](EVENTS.md). Current known limitations are in [AUDIT.ru.md](AUDIT.ru.md). Run blocking wrappers from `tokio::task::spawn_blocking`, never directly inside an async handler.
+The normalized adapter event contract and review/report APIs are documented in [EVENTS.md](EVENTS.md). Current known limitations are in [AUDIT.md](AUDIT.md). Run blocking wrappers from `tokio::task::spawn_blocking`, never directly inside an async handler.
+
+## 8. Documentation languages
+
+User guides are maintained in pairs: `NAME.md` in English and `NAME.ru.md` in Russian. Update both when changing behavior or instructions. Internal documentation links must stay in the current language; code, examples and benchmark data are shared. Link back to the matching root README's documentation section. The explicit language switches belong at the top of `README.md` and `README.ru.md`, outside the guide lists. `HANDOFF.md` is an internal maintenance checkpoint, not part of the user guide index.

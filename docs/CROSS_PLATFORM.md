@@ -1,6 +1,8 @@
-> Current observation boundaries: wrappers track the launched process, not every internal turn or detached GUI session. Telemetry delivery has bounded waits, and failures do not stop the child. See [EVENTS.md](EVENTS.md) and [audit limitations](AUDIT.ru.md).
-
 # Cross-Platform Architecture & Runner Support
+
+[Documentation](../README.md#documentation)
+
+> Current observation boundaries: wrappers track the launched process, not every internal turn or detached GUI session. Telemetry delivery has bounded waits, and failures do not stop the child. See [EVENTS.md](EVENTS.md) and [audit limitations](AUDIT.md).
 
 Harnesscope is engineered from the ground up for native performance across **macOS**, **Linux**, and **Windows**.
 

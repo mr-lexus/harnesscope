@@ -1,5 +1,7 @@
 # Homebrew Tap Guide for Harnesscope
 
+[Documentation](../README.md#documentation)
+
 Harnesscope is distributed via the official tap [`mr-lexus/homebrew-tap`](https://github.com/mr-lexus/homebrew-tap).
 
 ## macOS: install without changing Xcode

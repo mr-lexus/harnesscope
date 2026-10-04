@@ -1,5 +1,7 @@
 # Real-device acceptance: Codex GUI on macOS
 
+[Documentation](../README.md#documentation)
+
 Status: **not executed on a real macOS GUI**. CI tests and a Windows browser
 preview do not close this gate. Use a disposable project and fictitious task data
 first. Do not paste real credentials as test data.

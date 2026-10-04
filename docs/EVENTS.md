@@ -1,5 +1,7 @@
 # Integrating any agent
 
+[Documentation](../README.md#documentation)
+
 Harnesscope supports process wrappers, normalized adapter events and a [native Codex rollout collector](NATIVE_SOURCES.md). The original two ingestion paths remain:
 
 1. `harnesscope run --runner <name> <command> [args...]` observes a **process** with inherited terminal streams, its exit code and before/after Git state. It does not observe each prompt inside an interactive agent or an editor that detaches from its launcher.

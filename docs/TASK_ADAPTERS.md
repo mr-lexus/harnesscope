@@ -1,5 +1,7 @@
 # Connect a task tracker through observed MCP calls
 
+[Documentation](../README.md#documentation)
+
 Harnesscope has no built-in task-tracker provider. Configure the tracker MCP in
 your agent, using that provider's own authentication. Harnesscope observes the
 agent's captured calls/results; it does not connect to the tracker, poll tasks,

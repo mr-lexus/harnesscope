@@ -1,5 +1,7 @@
 # Durable delivery and process observations
 
+[Documentation](../README.md#documentation)
+
 Wrappers write redacted events to `<HARNESSCOPE_DB_PATH>.outbox.sqlite3` before attempting HTTP delivery. The separate SQLite queue uses WAL and FULL synchronous writes. Starting the child does not wait for server startup or network delivery; inherited stdin/stdout/stderr and the child's exit code remain intact. The wrapper performs bounded delivery work before it exits; unavailable telemetry does not change the agent's result.
 
 Queue connections allow up to five seconds for SQLite writer contention. Concurrent first-time initialization also retries BUSY/LOCKED failures with a fresh connection, including WAL setup failures that can bypass SQLite's busy handler. Exhausted waits and other storage errors remain explicit on stderr; they do not change the child exit code. Existing queued events remain on disk.
@@ -57,6 +59,6 @@ SQLite can retain allocated pages after delivery; the payload budget is not a ha
 - Overview: cohort comparisons become cards on narrow screens. Export continues to preserve selected report filters.
 
 
-Outbox payload size is maintained transactionally by SQLite triggers. Existing queues are backfilled once on opening; inserts, acknowledgements and rollbacks keep the 256 MiB payload budget exact without rereading all payloads on each enqueue. File size can exceed this payload budget because of SQLite/WAL overhead and retained free pages. See [the reproducible load results](PERFORMANCE.ru.md).
+Outbox payload size is maintained transactionally by SQLite triggers. Existing queues are backfilled once on opening; inserts, acknowledgements and rollbacks keep the 256 MiB payload budget exact without rereading all payloads on each enqueue. File size can exceed this payload budget because of SQLite/WAL overhead and retained free pages. See [the reproducible load results](PERFORMANCE.md).
 
 Main-database backups do not include queued delivery. Before a full migration, drain every destination and preserve the original database/outbox until the restored history has been verified; see [backup and recovery](BACKUPS.md).

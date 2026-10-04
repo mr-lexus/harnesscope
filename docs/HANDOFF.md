@@ -1,5 +1,7 @@
 # Harnesscope — continuation checkpoint
 
+[Documentation](../README.md#documentation)
+
 Updated 2026-10-03. Workspace: `C:\server\harnesscope` (Windows/PowerShell).
 
 **Current state:** the retrospective candidate is on `codex/retrospective-evidence`,

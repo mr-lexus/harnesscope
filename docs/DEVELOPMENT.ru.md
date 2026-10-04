@@ -1,12 +1,14 @@
 # Руководство разработчика (Harnesscope)
 
+[Документация](../README.ru.md#документация)
+
 В этом документе описаны требования, структура проекта, запуск в dev-режиме, тестирование и добавление новых runner-адаптеров.
 
 ---
 
 ## 1. Системные требования
 
-- **Rust toolchain**: current stable (`cargo`, `rustc`)
+- **Rust toolchain**: текущая стабильная версия (`cargo`, `rustc`)
 - **Node.js**: v20.19+ или v22.12+ с `npm` (рекомендуется Node.js 24 LTS)
 - **Git**: 2.30+ установлен и доступен в PATH
 - **Поддерживаемые ОС**: Windows 10/11, macOS (Intel/Apple Silicon), Linux (Ubuntu, Debian, Fedora, Arch)
@@ -169,4 +171,8 @@ rm -f ~/.local/share/harnesscope/harnesscope.db*
 4. **Свяжите вызов в `src/main.rs`** через `execute_wrapper`.
 5. **Добавьте тесты** парсера аргументов и конфигураций.
 
-The normalized adapter event contract and review/report APIs are documented in [EVENTS.md](EVENTS.md). Current known limitations are in [AUDIT.ru.md](AUDIT.ru.md). Run blocking wrappers from `tokio::task::spawn_blocking`, never directly inside an async handler.
+Нормализованный контракт адаптеров и API оценок/отчётов описаны в [контракте событий](EVENTS.ru.md), результаты проверки и ограничения — в [аудите](AUDIT.ru.md). Запускайте блокирующие обёртки через `tokio::task::spawn_blocking`, а не напрямую из async-обработчика.
+
+## 8. Языки документации
+
+Пользовательские руководства ведутся парами: `NAME.md` на английском и `NAME.ru.md` на русском. При изменении поведения или инструкций обновляйте обе версии. Внутренние ссылки на документацию должны сохранять язык страницы; код, примеры и данные замеров общие. Ссылка назад ведёт в раздел документации соответствующего корневого README. Явные переключатели языка размещаются вверху `README.md` и `README.ru.md`, вне списков руководств. `HANDOFF.md` — внутренний технический checkpoint, он не входит в пользовательский указатель.

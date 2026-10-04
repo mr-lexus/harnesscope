@@ -1,5 +1,7 @@
 # Retrospective evidence, API and MCP
 
+[Documentation](../README.md#documentation)
+
 See [CAPABILITIES.md](CAPABILITIES.md) before interpreting coverage. API version 1
 and evidence format 1 are distinct from SQLite schema 7. Existing `/api/v1/events`
 continues to work without modification.

@@ -1,5 +1,7 @@
 # Harnesscope
 
+[Русская версия](README.ru.md)
+
 > **A local retrospective workspace for AI coding workflows.**
 
 **Retrospective evidence:** the Evidence panel adds sanitized observations, task
@@ -116,22 +118,11 @@ repository. Start with `examples/task-adapter.json`, then run
 
 ## Documentation
 
-- [Connect a task-tracker MCP through local mappings](docs/TASK_ADAPTERS.md)
-
-- [Audit and limitations (Русский)](docs/AUDIT.ru.md)
-- [Product direction and competitors (Русский)](docs/PRODUCT.ru.md)
-- [Universal event integration and privacy](docs/EVENTS.md)
-
-- [System Architecture](docs/ARCHITECTURE.md)
-- [Homebrew Tap Guide](docs/HOMEBREW.md)
-- [Cross-Platform & GUI Launcher](docs/CROSS_PLATFORM.md)
-- [Developer Guide (English)](docs/DEVELOPMENT.md)
-- [README (Русский)](README.ru.md)
-- [Homebrew Руководство (Русский)](docs/HOMEBREW.ru.md)
-- [Кроссплатформенность (Русский)](docs/CROSS_PLATFORM.ru.md)
-- [Руководство разработчика (Русский)](docs/DEVELOPMENT.ru.md)
-
-
+- **Install and run:** [Homebrew](docs/HOMEBREW.md) · [Daily use](docs/RUNNING.md) · [Platforms and GUI](docs/CROSS_PLATFORM.md)
+- **Collection:** [Setup, API and MCP](docs/EVIDENCE.md) · [Codex history](docs/NATIVE_SOURCES.md) · [Capabilities and limits](docs/CAPABILITIES.md)
+- **Integrations:** [Agent events](docs/EVENTS.md) · [Task tracker adapters](docs/TASK_ADAPTERS.md)
+- **Reliability:** [Delivery and monitoring](docs/DELIVERY.md) · [Backups](docs/BACKUPS.md) · [Performance](docs/PERFORMANCE.md) · [Acceptance](docs/ACCEPTANCE.md)
+- **Development:** [Architecture](docs/ARCHITECTURE.md) · [Developer guide](docs/DEVELOPMENT.md) · [Product direction](docs/PRODUCT.md) · [Audit history](docs/AUDIT.md)
 
 ## Native Codex collection
 
@@ -154,7 +145,7 @@ Wrappers persist redacted telemetry before delivery and report child-process obs
 
 Use `harnesscope backup create --output snapshot.db`, `backup verify --file snapshot.db` and `backup restore --file snapshot.db --output restored.db`. Snapshots include committed WAL records; restore never overwrites an existing path and pauses native collectors. Pending outbox batches, source files and configuration are separate. See [backup and restore](docs/BACKUPS.md).
 
-The event journal loads on demand with cursor pagination and search across the history. Reproducible 10k/100k-event results and remaining scale limits are in [the performance report](docs/PERFORMANCE.ru.md).
+The event journal loads on demand with cursor pagination and search across the history. Reproducible 10k/100k-event results and remaining scale limits are in [the performance report](docs/PERFORMANCE.md).
 
 
-For local Windows installation, background collection, login startup and operating limits, see [the daily-use guide](docs/RUNNING.ru.md) and `scripts/install-local.ps1 -AutoStart`.
+For local Windows installation, background collection, login startup and operating limits, see [the daily-use guide](docs/RUNNING.md) and `scripts/install-local.ps1 -AutoStart`.

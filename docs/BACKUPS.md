@@ -1,5 +1,7 @@
 # Database backup and recovery
 
+[Documentation](../README.md#documentation)
+
 Schema 6+ snapshots include every referenced sanitized evidence object. External
 `<database>.objects` files are hash-checked and embedded into the portable SQLite
 backup one object at a time; restore needs only that backup file. Pending
